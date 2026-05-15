@@ -180,7 +180,9 @@
     "@radix-ui/react-tooltip": "^1.0.0",
     "clsx": "^2.0.0",
     "tailwind-merge": "^2.0.0",
-    "lucide-react": "^0.284.0"
+    "lucide-react": "^0.284.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
