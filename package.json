@@ -176,7 +176,11 @@
     "node-cron": "^4.2.1",
     "swagger-ui-express": "^5.0.0",
     "validator": "^13.11.0",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "@radix-ui/react-tooltip": "^1.0.0",
+    "clsx": "^2.0.0",
+    "tailwind-merge": "^2.0.0",
+    "lucide-react": "^0.284.0"
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
