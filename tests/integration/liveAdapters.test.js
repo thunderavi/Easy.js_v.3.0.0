@@ -1,13 +1,4 @@
 const fs = require('fs');
-const PostgreSQLAdapter = require('../../adapters/postgresql');
-const RedisAdapter = require('../../adapters/redis');
-const MongoDBAdapter = require('../../adapters/mongodb');
-const SupabaseAdapter = require('../../adapters/supabase');
-const FirebaseAdapter = require('../../adapters/firebase');
-const DynamoDBAdapter = require('../../adapters/dynamodb');
-const ElasticsearchAdapter = require('../../adapters/elasticsearch');
-const CassandraAdapter = require('../../adapters/cassandra');
-const Neo4jAdapter = require('../../adapters/neo4j');
 
 const live = process.env.LIVE_ADAPTERS === 'true' ? describe : describe.skip;
 
@@ -71,6 +62,7 @@ live('live database adapter contracts', () => {
   jest.setTimeout(90000);
 
   it('runs CRUD and health checks against PostgreSQL', async () => {
+    const PostgreSQLAdapter = require('../../adapters/postgresql');
     const adapter = new PostgreSQLAdapter();
     await adapter.connect(process.env.POSTGRES_URL || 'postgres://easyjs:easyjs@localhost:5432/easyjs_test', [model]);
 
@@ -88,6 +80,7 @@ live('live database adapter contracts', () => {
   });
 
   it('runs CRUD and health checks against Redis', async () => {
+    const RedisAdapter = require('../../adapters/redis');
     const adapter = new RedisAdapter();
     await adapter.connect(process.env.REDIS_URL || 'redis://localhost:6379');
 
@@ -105,6 +98,7 @@ live('live database adapter contracts', () => {
   });
 
   it('runs CRUD and health checks against MongoDB', async () => {
+    const MongoDBAdapter = require('../../adapters/mongodb');
     const adapter = new MongoDBAdapter();
     await adapter.connect({
       uri: process.env.MONGODB_URL || 'mongodb://localhost:27017/easyjs_test',
@@ -128,6 +122,7 @@ live('live database adapter contracts', () => {
   });
 
   testIfConfigured('runs CRUD and health checks against Supabase', ['SUPABASE_URL', 'SUPABASE_KEY'], async () => {
+    const SupabaseAdapter = require('../../adapters/supabase');
     const adapter = new SupabaseAdapter();
     const table = env('SUPABASE_TABLE') || model.name;
     await adapter.connect({ url: process.env.SUPABASE_URL, key: process.env.SUPABASE_KEY }, [{ ...model, name: table }]);
@@ -150,6 +145,7 @@ live('live database adapter contracts', () => {
     Boolean(env('FIREBASE_PROJECT_ID') && (env('FIREBASE_CREDENTIALS_JSON') || env('FIREBASE_CREDENTIALS_BASE64') || env('FIREBASE_CREDENTIALS_FILE'))),
     'FIREBASE_PROJECT_ID and one Firebase credentials source',
     async () => {
+    const FirebaseAdapter = require('../../adapters/firebase');
     const adapter = new FirebaseAdapter();
 
     await adapter.connect({
@@ -175,6 +171,7 @@ live('live database adapter contracts', () => {
     Boolean(env('AWS_REGION') && (env('DYNAMODB_ENDPOINT') || env('AWS_PROFILE') || (env('AWS_ACCESS_KEY_ID') && env('AWS_SECRET_ACCESS_KEY')))),
     'AWS_REGION plus DYNAMODB_ENDPOINT, AWS_PROFILE, or AWS access keys',
     async () => {
+    const DynamoDBAdapter = require('../../adapters/dynamodb');
     const adapter = new DynamoDBAdapter();
     const table = env('DYNAMODB_TABLE') || model.name;
     await adapter.connect({
@@ -198,6 +195,7 @@ live('live database adapter contracts', () => {
   });
 
   testIfConfigured('runs CRUD and health checks against Elasticsearch/OpenSearch', ['ELASTICSEARCH_URL'], async () => {
+    const ElasticsearchAdapter = require('../../adapters/elasticsearch');
     const adapter = new ElasticsearchAdapter();
     const index = env('ELASTICSEARCH_INDEX') || model.name;
     const auth = env('ELASTICSEARCH_API_KEY')
@@ -224,6 +222,7 @@ live('live database adapter contracts', () => {
   });
 
   testIfConfigured('runs CRUD and health checks against Cassandra', ['CASSANDRA_CONTACT_POINTS', 'CASSANDRA_KEYSPACE'], async () => {
+    const CassandraAdapter = require('../../adapters/cassandra');
     const adapter = new CassandraAdapter();
     await adapter.connect({
       contactPoints: process.env.CASSANDRA_CONTACT_POINTS.split(',').map(point => point.trim()).filter(Boolean),
@@ -250,6 +249,7 @@ live('live database adapter contracts', () => {
   });
 
   testIfConfigured('runs CRUD and health checks against Neo4j', ['NEO4J_URL'], async () => {
+    const Neo4jAdapter = require('../../adapters/neo4j');
     const adapter = new Neo4jAdapter();
     await adapter.connect(process.env.NEO4J_URL, [model]);
 

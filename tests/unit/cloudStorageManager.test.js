@@ -9,18 +9,18 @@ jest.mock('@aws-sdk/client-s3', () => ({
   GetObjectCommand: jest.fn(params => ({ type: 'GetObjectCommand', params })),
   HeadObjectCommand: jest.fn(params => ({ type: 'HeadObjectCommand', params })),
   ListObjectsV2Command: jest.fn(params => ({ type: 'ListObjectsV2Command', params }))
-}));
+}), { virtual: true });
 
 jest.mock('@aws-sdk/lib-storage', () => ({
   Upload: jest.fn(function Upload(config) {
     this.config = config;
     this.done = done;
   })
-}));
+}), { virtual: true });
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: (...args) => getSignedUrlMock(...args)
-}));
+}), { virtual: true });
 
 const CloudStorageManager = require('../../storage/cloudStorageManager');
 
