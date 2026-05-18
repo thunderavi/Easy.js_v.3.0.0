@@ -52,8 +52,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run validate:production
       - run: npm run test:coverage
-      - run: rm -f package-lock.json
-      - run: npm install pg redis mongoose --no-save --legacy-peer-deps
+      - run: npm install pg redis mongoose --legacy-peer-deps
       - run: npm run test:live:adapters
         env:
           LIVE_ADAPTERS: true
