@@ -1,13 +1,13 @@
 const sendMail = jest.fn();
 jest.mock('nodemailer', () => ({
   createTransport: jest.fn(() => ({ sendMail }))
-}), { virtual: true });
+}));
 
 const sgMail = {
   setApiKey: jest.fn(),
   send: jest.fn()
 };
-jest.mock('@sendgrid/mail', () => sgMail, { virtual: true });
+jest.mock('@sendgrid/mail', () => sgMail);
 
 const EmailService = require('../../email/emailService');
 

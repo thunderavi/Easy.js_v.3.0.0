@@ -18,3 +18,6 @@ node_modules
 # Temporary plugin directories (generated during tests)
 tmp-easy-plugin-*
 tmp-easy-plugin-reload-*
+
+# TypeScript build info cache
+tsconfig.tsbuildinfo

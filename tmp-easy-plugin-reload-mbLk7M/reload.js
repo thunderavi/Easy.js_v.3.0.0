@@ -1,1 +1,0 @@
-module.exports = { name: 'reload', version: '1.0.0' };
