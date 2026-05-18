@@ -41,9 +41,11 @@ const peerDeps = [
   'vscode-languageserver-textdocument'
 ];
 
-peerDeps.forEach(dep => {
-  jest.mock(dep, () => ({}), { virtual: true });
-});
+if (process.env.LIVE_ADAPTERS !== 'true') {
+  peerDeps.forEach(dep => {
+    jest.mock(dep, () => ({}), { virtual: true });
+  });
+}
 
 // Global test utilities
 global.testUtils = {
