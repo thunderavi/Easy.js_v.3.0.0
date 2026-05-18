@@ -52,7 +52,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run validate:production
       - run: npm run test:coverage
-      - run: npm install pg redis mongoose --no-save
+      - run: npm install pg redis mongoose --no-save --legacy-peer-deps --force
       - run: npm run test:live:adapters
         env:
           LIVE_ADAPTERS: true
