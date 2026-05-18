@@ -46,13 +46,12 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
       - run: npm run verify
       - run: npm run lint:easy
       - run: npm run typecheck
       - run: npm run validate:production
       - run: npm run test:coverage
-      - run: npm install pg redis mongoose --no-save --no-package-lock --legacy-peer-deps --no-prune
       - run: npm run test:live:adapters
         env:
           LIVE_ADAPTERS: true
