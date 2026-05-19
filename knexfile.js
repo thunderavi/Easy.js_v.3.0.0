@@ -17,6 +17,24 @@ module.exports = {
     }
   },
 
+  test: {
+    client: process.env.DB_CLIENT || 'pg',
+    connection: process.env.DATABASE_URL || process.env.POSTGRES_URL || {
+      host: process.env.DB_HOST || 'localhost',
+      user: process.env.DB_USER || 'easyjs',
+      password: process.env.DB_PASSWORD || 'easyjs',
+      database: process.env.DB_NAME || 'easyjs_test'
+    },
+    migrations: {
+      directory: './migrations',
+      extension: 'js'
+    },
+    seeds: {
+      directory: './seeds',
+      extension: 'js'
+    }
+  },
+
   staging: {
     client: 'postgresql',
     connection: process.env.DATABASE_URL,
