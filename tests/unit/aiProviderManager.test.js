@@ -12,7 +12,7 @@ jest.mock('openai', () => jest.fn().mockImplementation(config => ({
       data: [{ embedding: [0.1, 0.2] }]
     })
   }
-})));
+})), { virtual: true });
 jest.mock('@google/genai', () => ({
   GoogleGenAI: jest.fn().mockImplementation(config => ({
     config,
@@ -22,7 +22,7 @@ jest.mock('@google/genai', () => ({
       })
     }
   }))
-}));
+}), { virtual: true });
 jest.mock('@anthropic-ai/sdk', () => jest.fn().mockImplementation(config => ({
   config,
   messages: {
@@ -31,7 +31,7 @@ jest.mock('@anthropic-ai/sdk', () => jest.fn().mockImplementation(config => ({
       content: [{ text: 'from constructed anthropic' }]
     })
   }
-})));
+})), { virtual: true });
 
 const AIProviderManager = require('../../core/aiProviderManager');
 const OpenAI = require('openai');

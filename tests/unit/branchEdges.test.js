@@ -5,6 +5,98 @@ const os = require('os');
 const AIProviderManager = require('../../core/aiProviderManager');
 const QueryBuilder = require('../../core/queryBuilder');
 const ValidationEngine = require('../../core/validator');
+const mockTables = {};
+jest.mock('sql.js', () => {
+  return jest.fn(async () => {
+    return {
+      Database: class Database {
+        run(sql, values) {
+          if (sql.includes('CREATE TABLE')) {
+            const tableName = sql.match(/CREATE TABLE IF NOT EXISTS "([^"]+)"/)?.[1] || 'users';
+            mockTables[tableName] = mockTables[tableName] || [];
+            return;
+          }
+          if (sql.includes('INSERT INTO')) {
+            const tableName = sql.match(/INSERT INTO "([^"]+)"/)?.[1] || 'users';
+            const keysMatch = sql.match(/\(([^)]+)\)/);
+            if (keysMatch) {
+              const keys = keysMatch[1].split(',').map(s => s.replace(/"/g, '').trim());
+              const record = {};
+              keys.forEach((key, idx) => {
+                record[key] = values[idx];
+              });
+              mockTables[tableName] = mockTables[tableName] || [];
+              mockTables[tableName].push(record);
+            }
+            return;
+          }
+          if (sql.includes('UPDATE')) {
+            const tableName = sql.match(/UPDATE "([^"]+)" SET/)?.[1] || 'users';
+            const id = values[values.length - 1];
+            const record = (mockTables[tableName] || []).find(r => r.id === id);
+            if (record) {
+              const setPart = sql.match(/SET\s+([\s\S]+?)\s+WHERE/)?.[1] || '';
+              const keys = setPart.split(',').map(part => part.trim().split('=')[0].replace(/"/g, '').trim()).filter(k => k && k !== 'updated_at');
+              keys.forEach((key, idx) => {
+                record[key] = values[idx];
+              });
+            }
+            return;
+          }
+          if (sql.includes('DELETE FROM')) {
+            const tableName = sql.match(/DELETE FROM "([^"]+)"/)?.[1] || 'users';
+            const id = values[0];
+            mockTables[tableName] = (mockTables[tableName] || []).filter(r => r.id !== id);
+            return;
+          }
+        }
+        prepare(sql) {
+          let tableName = sql.match(/FROM "([^"]+)"/)?.[1] || 'users';
+          let rows = [];
+          let filteredRows = null;
+          if (sql.includes('SELECT COUNT(*)')) {
+            rows = [{ count: mockTables[tableName]?.length || 0 }];
+          } else if (sql.includes('SELECT * FROM')) {
+            rows = mockTables[tableName] || [];
+          }
+          let index = 0;
+          return {
+            bind(values) {
+              if (sql.includes('WHERE')) {
+                if (sql.includes('"id" = ?')) {
+                  const id = values[0];
+                  filteredRows = (mockTables[tableName] || []).filter(r => r.id === id);
+                } else if (sql.includes('"name" = ?')) {
+                  const name = values[0];
+                  filteredRows = (mockTables[tableName] || []).filter(r => r.name === name);
+                }
+              }
+            },
+            step() {
+              const activeRows = filteredRows || rows;
+              if (sql.includes('SELECT COUNT(*)')) {
+                const countVal = filteredRows ? filteredRows.length : (mockTables[tableName]?.length || 0);
+                rows = [{ count: countVal }];
+                return index < rows.length;
+              }
+              return index < activeRows.length;
+            },
+            getAsObject() {
+              const activeRows = filteredRows || rows;
+              return activeRows[index++];
+            },
+            free() {}
+          };
+        }
+        export() {
+          return new Uint8Array();
+        }
+        close() {}
+      }
+    };
+  });
+}, { virtual: true });
+
 const SQLiteAdapter = require('../../adapters/sqlite');
 
 describe('branch edge contracts', () => {
