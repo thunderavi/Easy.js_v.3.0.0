@@ -1,4 +1,4 @@
-jest.mock('@sentry/node', () => ({ init: jest.fn(), captureException: jest.fn() }), { virtual: true });
+jest.mock('@sentry/node', () => ({ init: jest.fn(), captureException: jest.fn() }));
 jest.mock('@opentelemetry/api', () => ({
   trace: {
     getTracer: jest.fn(() => ({
@@ -8,7 +8,7 @@ jest.mock('@opentelemetry/api', () => ({
       }))
     }))
   }
-}), { virtual: true });
+}));
 
 const Observability = require('../../core/observability');
 const Sentry = require('@sentry/node');

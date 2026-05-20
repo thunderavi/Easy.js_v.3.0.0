@@ -1,4 +1,4 @@
-jest.mock('redis', () => ({ createClient: jest.fn() }), { virtual: true });
+jest.mock('redis', () => ({ createClient: jest.fn() }));
 
 const redis = require('redis');
 const CacheEngine = require('../../core/cache');

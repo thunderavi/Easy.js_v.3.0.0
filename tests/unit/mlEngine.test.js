@@ -12,7 +12,7 @@ jest.mock('@tensorflow/tfjs', () => {
     },
     tensor2d: jest.fn(tensor)
   };
-}, { virtual: true });
+});
 
 const fs = require('fs');
 const tf = require('@tensorflow/tfjs');

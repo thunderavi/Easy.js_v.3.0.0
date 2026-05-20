@@ -37,7 +37,7 @@ const stripeClient = {
   }
 };
 
-jest.mock('stripe', () => jest.fn(() => stripeClient), { virtual: true });
+jest.mock('stripe', () => jest.fn(() => stripeClient));
 
 const PaymentProcessor = require('../../payments/paymentProcessor');
 

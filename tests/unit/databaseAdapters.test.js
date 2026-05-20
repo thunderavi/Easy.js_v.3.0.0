@@ -1,10 +1,10 @@
-jest.mock('pg', () => ({ Pool: jest.fn() }), { virtual: true });
-jest.mock('mysql2/promise', () => ({ createPool: jest.fn() }), { virtual: true });
-jest.mock('mssql', () => ({ connect: jest.fn() }), { virtual: true });
-jest.mock('@libsql/client', () => ({ createClient: jest.fn() }), { virtual: true });
-jest.mock('redis', () => ({ createClient: jest.fn() }), { virtual: true });
-jest.mock('@supabase/supabase-js', () => ({ createClient: jest.fn() }), { virtual: true });
-jest.mock('@elastic/elasticsearch', () => ({ Client: jest.fn() }), { virtual: true });
+jest.mock('pg', () => ({ Pool: jest.fn() }));
+jest.mock('mysql2/promise', () => ({ createPool: jest.fn() }));
+jest.mock('mssql', () => ({ connect: jest.fn() }));
+jest.mock('@libsql/client', () => ({ createClient: jest.fn() }));
+jest.mock('redis', () => ({ createClient: jest.fn() }));
+jest.mock('@supabase/supabase-js', () => ({ createClient: jest.fn() }));
+jest.mock('@elastic/elasticsearch', () => ({ Client: jest.fn() }));
 jest.mock('mongoose', () => ({
   connect: jest.fn(),
   disconnect: jest.fn(),
@@ -14,31 +14,31 @@ jest.mock('mongoose', () => ({
   }),
   model: jest.fn(),
   models: {}
-}), { virtual: true });
+}));
 jest.mock('firebase-admin', () => ({
   apps: [],
   initializeApp: jest.fn(),
   credential: { cert: jest.fn(credentials => ({ credentials })) },
   firestore: jest.fn()
-}), { virtual: true });
+}));
 jest.mock('cassandra-driver', () => ({
   Client: jest.fn(),
   auth: {
     PlainTextAuthProvider: jest.fn((username, password) => ({ username, password }))
   },
   types: { uuid: jest.fn(() => ({ toString: () => 'cass-id' })) }
-}), { virtual: true });
+}));
 jest.mock('neo4j-driver', () => ({
   driver: jest.fn(),
   auth: { basic: jest.fn((user, password) => ({ user, password })) }
-}), { virtual: true });
+}));
 jest.mock('@aws-sdk/client-dynamodb', () => ({
   DynamoDBClient: jest.fn(),
   waitUntilTableExists: jest.fn(),
   CreateTableCommand: class CreateTableCommand {
     constructor(input) { this.input = input; }
   }
-}), { virtual: true });
+}));
 jest.mock('@aws-sdk/lib-dynamodb', () => ({
   DynamoDBDocumentClient: { from: jest.fn() },
   DeleteCommand: class DeleteCommand { constructor(input) { this.input = input; } },
@@ -47,7 +47,7 @@ jest.mock('@aws-sdk/lib-dynamodb', () => ({
   QueryCommand: class QueryCommand { constructor(input) { this.input = input; } },
   ScanCommand: class ScanCommand { constructor(input) { this.input = input; } },
   UpdateCommand: class UpdateCommand { constructor(input) { this.input = input; } }
-}), { virtual: true });
+}));
 
 const { Pool } = require('pg');
 const mysql = require('mysql2/promise');

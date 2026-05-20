@@ -13,7 +13,6 @@ next.user-config.*
 # Common ignores
 node_modules
 .next/
-coverage/
 .DS_Store
 
 # Temporary plugin directories (generated during tests)
