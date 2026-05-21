@@ -6,6 +6,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const base32 = require('base32.js');
+const { createAuthStore } = require('./authStore');
 
 class EnterpriseAuth {
   constructor(config = {}) {
@@ -23,10 +24,13 @@ class EnterpriseAuth {
       ...config
     };
 
-    this.sessions = new Map();
-    this.mfaSecrets = new Map();
+    // Static provider configuration — not runtime auth state, stays in memory.
     this.oauth2Providers = new Map();
-    this.loginAttempts = new Map();
+
+    // Pluggable auth store — defaults to MemoryAuthStore for dev/tests.
+    // Pass config.store = new DatabaseAuthStore({ knex }) for production.
+    this.store = config.store || createAuthStore();
+
     this.maxLoginAttempts = 5;
     this.lockoutDuration = 15 * 60 * 1000; // 15 minutes
   }
@@ -88,24 +92,26 @@ class EnterpriseAuth {
   }
 
   /**
-   * Generate MFA secret for user
+   * Generate MFA secret for user and persist it in the auth store.
+   * NOW ASYNC — callers must await.
    */
-  generateMFASecret(userId) {
+  async generateMFASecret(userId) {
     const secret = crypto.randomBytes(20);
     const encoder = new base32.Encoder();
     const encodedSecret = encoder.write(secret).finalize();
 
-    this.mfaSecrets.set(userId, {
+    const secretData = {
       secret: encodedSecret,
       verified: false,
       backupCodes: this.generateBackupCodes(10),
       createdAt: Date.now()
-    });
+    };
+    await this.store.saveMfaSecret(userId, secretData);
 
     return {
       secret: encodedSecret,
       qrUrl: `otpauth://totp/${userId}?secret=${encodedSecret}`,
-      backupCodes: this.mfaSecrets.get(userId).backupCodes
+      backupCodes: secretData.backupCodes
     };
   }
 
@@ -121,10 +127,11 @@ class EnterpriseAuth {
   }
 
   /**
-   * Verify TOTP token
+   * Verify TOTP token.
+   * NOW ASYNC — callers must await.
    */
-  verifyTOTP(userId, token) {
-    const mfaData = this.mfaSecrets.get(userId);
+  async verifyTOTP(userId, token) {
+    const mfaData = await this.store.getMfaSecret(userId);
     if (!mfaData) throw new Error('MFA not configured for user');
 
     const decoder = new base32.Decoder();
@@ -132,7 +139,6 @@ class EnterpriseAuth {
 
     // Calculate expected token
     const time = Math.floor(Date.now() / 1000 / this.config.mfaWindow);
-    const expectedToken = this.generateTOTPToken(secret, time);
 
     // Check current and adjacent windows for clock skew
     for (let i = -1; i <= 1; i++) {
@@ -158,15 +164,18 @@ class EnterpriseAuth {
   }
 
   /**
-   * Verify backup code
+   * Verify backup code and consume it (one-time use).
+   * NOW ASYNC — callers must await.
    */
-  verifyBackupCode(userId, code) {
-    const mfaData = this.mfaSecrets.get(userId);
+  async verifyBackupCode(userId, code) {
+    const mfaData = await this.store.getMfaSecret(userId);
     if (!mfaData) throw new Error('MFA not configured for user');
 
     const index = mfaData.backupCodes.indexOf(code.toUpperCase());
     if (index !== -1) {
+      // Consume the code — splice and persist the updated list
       mfaData.backupCodes.splice(index, 1);
+      await this.store.saveMfaSecret(userId, mfaData);
       return true;
     }
 
@@ -174,30 +183,31 @@ class EnterpriseAuth {
   }
 
   /**
-   * Enable MFA for user
+   * Enable MFA for user after successful TOTP verification.
+   * NOW ASYNC — callers must await.
    */
-  enableMFA(userId, token) {
-    const mfaData = this.mfaSecrets.get(userId);
+  async enableMFA(userId, token) {
+    const mfaData = await this.store.getMfaSecret(userId);
     if (!mfaData) throw new Error('Generate MFA secret first');
 
-    if (!this.verifyTOTP(userId, token)) {
+    if (!(await this.verifyTOTP(userId, token))) {
       throw new Error('Invalid verification token');
     }
 
     mfaData.verified = true;
+    await this.store.saveMfaSecret(userId, mfaData);
     return { success: true, backupCodes: mfaData.backupCodes };
   }
 
   /**
-   * Create session with MFA requirement
+   * Create session with MFA requirement and persist in the auth store.
+   * Already async.
    */
   async createSession(userId, requireMFA = false) {
     const sessionId = crypto.randomBytes(32).toString('hex');
-    const session = {
-      userId,
+    const expiresAt = new Date(Date.now() + this.config.sessionTimeout);
+    const sessionData = {
       sessionId,
-      createdAt: Date.now(),
-      lastActivity: Date.now(),
       mfaVerified: !requireMFA,
       mfaPending: requireMFA,
       ip: null,
@@ -205,13 +215,7 @@ class EnterpriseAuth {
       device: null
     };
 
-    this.sessions.set(sessionId, session);
-
-    // Clean up old sessions
-    if (this.sessions.size > 10000) {
-      this.cleanupSessions();
-    }
-
+    await this.store.saveSession(sessionId, userId, sessionData, expiresAt);
     return sessionId;
   }
 
@@ -283,18 +287,23 @@ class EnterpriseAuth {
   }
 
   /**
-   * Validate login attempt
+   * Validate login attempt, throwing if the account is locked.
+   * NOW ASYNC — callers must await.
    */
-  checkLoginAttempts(userId) {
-    const attempts = this.loginAttempts.get(userId) || { count: 0, lockedUntil: null };
+  async checkLoginAttempts(userId) {
+    const attempts = await this.store.getLoginAttempts(userId) || { count: 0, lockedUntil: null };
 
     if (attempts.lockedUntil && attempts.lockedUntil > Date.now()) {
       throw new Error('Account temporarily locked due to too many login attempts');
     }
 
     if (attempts.count >= this.maxLoginAttempts) {
-      attempts.lockedUntil = Date.now() + this.lockoutDuration;
-      this.loginAttempts.set(userId, attempts);
+      const lockedUntil = Date.now() + this.lockoutDuration;
+      await this.store.recordLoginAttempt(userId, {
+        count: attempts.count,
+        lockedUntil,
+        lastAttemptAt: attempts.lastAttemptAt || Date.now()
+      });
       throw new Error('Account locked. Try again after 15 minutes');
     }
 
@@ -302,65 +311,93 @@ class EnterpriseAuth {
   }
 
   /**
-   * Record failed login attempt
+   * Record a failed login attempt.
+   * NOW ASYNC — callers must await.
    */
-  recordFailedAttempt(userId) {
-    const attempts = this.loginAttempts.get(userId) || { count: 0 };
+  async recordFailedAttempt(userId) {
+    const attempts = await this.store.getLoginAttempts(userId) || { count: 0, lockedUntil: null };
     attempts.count++;
-    attempts.lastAttempt = Date.now();
-    this.loginAttempts.set(userId, attempts);
+    attempts.lastAttemptAt = Date.now();
+    await this.store.recordLoginAttempt(userId, attempts);
   }
 
   /**
-   * Clear login attempts
+   * Clear login attempts after a successful login.
+   * NOW ASYNC — callers must await.
    */
-  clearLoginAttempts(userId) {
-    this.loginAttempts.delete(userId);
+  async clearLoginAttempts(userId) {
+    await this.store.clearLoginAttempts(userId);
   }
 
   /**
-   * Cleanup expired sessions
+   * Remove expired sessions via the auth store.
+   * NOW ASYNC — callers must await.
+   * Alias: cleanupSessions kept for backward compatibility.
    */
-  cleanupSessions() {
-    const now = Date.now();
-    for (const [sessionId, session] of this.sessions.entries()) {
-      if (now - session.lastActivity > this.config.sessionTimeout) {
-        this.sessions.delete(sessionId);
-      }
+  async cleanupExpired() {
+    return this.store.cleanupExpired();
+  }
+
+  /** Backward-compatible alias for cleanupExpired. */
+  async cleanupSessions() {
+    return this.cleanupExpired();
+  }
+
+  /**
+   * Validate session, updating lastActivity on success.
+   * NOW ASYNC — callers must await.
+   *
+   * Throws 'Invalid session' if the sessionId has never existed.
+   * Throws 'Session expired' if the session exists but is expired or revoked.
+   */
+  async validateSession(sessionId) {
+    // Use the store's raw map / DB to check existence separately from validity.
+    // MemoryAuthStore exposes _sessions; for DB adapter we check getSession plus
+    // a raw existence check via a dedicated helper. We implement this by first
+    // trying to find any record (including expired/revoked) via a store method.
+    //
+    // Both adapters support getSession() returning null for expired/revoked
+    // and for non-existent. We disambiguate by calling a lightweight peek.
+    const session = await this.store.getSession(sessionId);
+    if (session) {
+      // Active session — update lastActivity and return
+      await this.store.touchSession(sessionId);
+      return session;
     }
-  }
 
-  /**
-   * Validate session
-   */
-  validateSession(sessionId) {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new Error('Invalid session');
+    // Session returned null. Distinguish expired/revoked from never-existed
+    // by checking if the raw entry exists in the store.
+    // MemoryAuthStore: check _sessions map directly.
+    // DatabaseAuthStore: exposeRawSession would need a separate query — fall
+    //   back to 'Session expired' since it's the common production case.
+    const rawExists = typeof this.store._sessions !== 'undefined'
+      ? this.store._sessions.has(sessionId)
+      : false; // DB adapter: treat null as expired (safe default)
 
-    if (Date.now() - session.lastActivity > this.config.sessionTimeout) {
-      this.sessions.delete(sessionId);
-      throw new Error('Session expired');
+    if (!rawExists) {
+      throw new Error('Invalid session');
     }
-
-    session.lastActivity = Date.now();
-    return session;
+    throw new Error('Session expired');
   }
 
   /**
-   * Logout session
+   * Logout: revoke the session in the auth store.
+   * NOW ASYNC — callers must await.
    */
-  logout(sessionId) {
-    this.sessions.delete(sessionId);
+  async logout(sessionId) {
+    await this.store.revokeSession(sessionId);
   }
 
   /**
-   * Get authentication statistics
+   * Get authentication statistics.
+   * NOW ASYNC — callers must await.
    */
-  getStats() {
+  async getStats() {
+    const stats = await this.store.getStats();
     return {
-      activeSessions: this.sessions.size,
-      mfaEnabledUsers: this.mfaSecrets.size,
-      lockedAccounts: Array.from(this.loginAttempts.values()).filter(a => a.lockedUntil).length,
+      activeSessions: stats.activeSessions,
+      mfaEnabledUsers: stats.mfaEnabledUsers,
+      lockedAccounts: stats.lockedAccounts,
       oauth2Providers: this.oauth2Providers.size
     };
   }

@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const Logger = require('./logger');
+const { createAuthStore } = require('./authStore');
 
 class AuthManager {
   constructor(options = {}) {
@@ -12,9 +13,9 @@ class AuthManager {
     this.refreshExpiry = options.refreshExpiry || process.env.JWT_REFRESH_EXPIRY || '7d';
     this.resetTokenExpiryMs = options.resetTokenExpiryMs || 60 * 60 * 1000;
     this.verificationTokenExpiryMs = options.verificationTokenExpiryMs || 24 * 60 * 60 * 1000;
-    this.refreshTokens = new Map();
-    this.passwordResetTokens = new Map();
-    this.emailVerificationTokens = new Map();
+    // Pluggable auth store — defaults to MemoryAuthStore for dev/tests.
+    // Pass options.store = new DatabaseAuthStore({ knex }) for production.
+    this.store = options.store || createAuthStore();
   }
 
   initialize(authConfig) {
@@ -39,25 +40,32 @@ class AuthManager {
     );
   }
 
-  generateRefreshToken(userId, payload = {}) {
+  /**
+   * Generate a signed refresh JWT and persist its tokenId in the auth store.
+   * NOW ASYNC — callers must await.
+   */
+  async generateRefreshToken(userId, payload = {}) {
     const tokenId = crypto.randomBytes(16).toString('hex');
     const token = jwt.sign(
       { userId, tokenId, ...payload },
       this.refreshSecret,
       { expiresIn: this.refreshExpiry }
     );
-    this.refreshTokens.set(tokenId, {
-      userId,
-      revoked: false,
-      createdAt: Date.now()
-    });
+    // Derive expiresAt from the JWT itself so the store and the token agree.
+    const decoded = jwt.decode(token);
+    const expiresAt = new Date(decoded.exp * 1000);
+    await this.store.saveRefreshToken(tokenId, userId, expiresAt);
     return token;
   }
 
-  issueTokenPair(userId, payload = {}) {
+  /**
+   * Issue an access + refresh token pair.
+   * NOW ASYNC — callers must await.
+   */
+  async issueTokenPair(userId, payload = {}) {
     return {
       accessToken: this.generateToken(userId, payload),
-      refreshToken: this.generateRefreshToken(userId, payload),
+      refreshToken: await this.generateRefreshToken(userId, payload),
       tokenType: 'Bearer',
       expiresIn: this.jwtExpiry
     };
@@ -71,11 +79,15 @@ class AuthManager {
     }
   }
 
-  verifyRefreshToken(token) {
+  /**
+   * Verify a refresh JWT and confirm it has not been revoked via the store.
+   * NOW ASYNC — callers must await.
+   */
+  async verifyRefreshToken(token) {
     try {
       const decoded = jwt.verify(token, this.refreshSecret);
-      const record = this.refreshTokens.get(decoded.tokenId);
-      if (!record || record.revoked) {
+      const record = await this.store.getRefreshToken(decoded.tokenId);
+      if (!record) {
         throw new Error('Refresh token revoked');
       }
       return decoded;
@@ -84,25 +96,29 @@ class AuthManager {
     }
   }
 
-  rotateRefreshToken(refreshToken, payload = {}) {
-    const decoded = this.verifyRefreshToken(refreshToken);
-    this.revokeRefreshToken(decoded.tokenId);
+  /**
+   * Rotate a refresh token: revoke the old one and issue a fresh pair.
+   * NOW ASYNC — callers must await.
+   */
+  async rotateRefreshToken(refreshToken, payload = {}) {
+    const decoded = await this.verifyRefreshToken(refreshToken);
+    await this.revokeRefreshToken(decoded.tokenId);
     return this.issueTokenPair(decoded.userId, payload);
   }
 
-  revokeRefreshToken(tokenOrId) {
+  /**
+   * Revoke a refresh token by its tokenId or by decoding a full JWT.
+   * NOW ASYNC — callers must await.
+   */
+  async revokeRefreshToken(tokenOrId) {
     let tokenId = tokenOrId;
     try {
       tokenId = jwt.decode(tokenOrId)?.tokenId || tokenOrId;
     } catch {
       tokenId = tokenOrId;
     }
-    const record = this.refreshTokens.get(tokenId);
-    if (record) {
-      record.revoked = true;
-      record.revokedAt = Date.now();
-    }
-    return Boolean(record);
+    await this.store.revokeRefreshToken(tokenId);
+    return true;
   }
 
   jwtMiddleware() {
@@ -152,7 +168,7 @@ class AuthManager {
       }
 
       const userId = user.id || user._id;
-      const tokens = this.issueTokenPair(userId, { email: user.email, role: user.role });
+      const tokens = await this.issueTokenPair(userId, { email: user.email, role: user.role });
 
       return {
         success: true,
@@ -182,7 +198,7 @@ class AuthManager {
       const user = await db.query(this.config.model, 'create', userData);
 
       const userId = user.id || user._id;
-      const tokens = this.issueTokenPair(userId, { email: user.email, role: user.role });
+      const tokens = await this.issueTokenPair(userId, { email: user.email, role: user.role });
 
       return {
         success: true,
@@ -200,25 +216,27 @@ class AuthManager {
     }
   }
 
-  createPasswordResetToken(userId) {
+  /**
+   * Generate a password reset token and persist it in the auth store.
+   * NOW ASYNC — callers must await.
+   * @returns {Promise<string>} The raw token to send to the user via email.
+   */
+  async createPasswordResetToken(userId) {
     const token = crypto.randomBytes(32).toString('hex');
-    this.passwordResetTokens.set(token, {
-      userId,
-      expiresAt: Date.now() + this.resetTokenExpiryMs,
-      used: false
-    });
+    const expiresAt = new Date(Date.now() + this.resetTokenExpiryMs);
+    await this.store.savePasswordResetToken(token, userId, expiresAt);
     return token;
   }
 
   async resetPassword(token, newPassword, db = null) {
-    const record = this.passwordResetTokens.get(token);
-    if (!record || record.used || record.expiresAt < Date.now()) {
+    const record = await this.store.getPasswordResetToken(token);
+    if (!record) {
       throw new Error('Password reset token is invalid or expired');
     }
 
     const hashedPassword = await this.hashPassword(newPassword);
-    record.used = true;
-    record.usedAt = Date.now();
+    // Mark token as consumed
+    await this.store.deletePasswordResetToken(token);
 
     if (db && this.config?.model) {
       await db.query(this.config.model, 'update', {
@@ -230,25 +248,26 @@ class AuthManager {
     return { success: true, userId: record.userId };
   }
 
-  createEmailVerificationToken(userId, email) {
+  /**
+   * Generate an email verification token and persist it in the auth store.
+   * NOW ASYNC — callers must await.
+   * @returns {Promise<string>} The raw token to send to the user via email.
+   */
+  async createEmailVerificationToken(userId, email) {
     const token = crypto.randomBytes(32).toString('hex');
-    this.emailVerificationTokens.set(token, {
-      userId,
-      email,
-      expiresAt: Date.now() + this.verificationTokenExpiryMs,
-      used: false
-    });
+    const expiresAt = new Date(Date.now() + this.verificationTokenExpiryMs);
+    await this.store.saveEmailVerificationToken(token, userId, email, expiresAt);
     return token;
   }
 
   async verifyEmail(token, db = null) {
-    const record = this.emailVerificationTokens.get(token);
-    if (!record || record.used || record.expiresAt < Date.now()) {
+    const record = await this.store.getEmailVerificationToken(token);
+    if (!record) {
       throw new Error('Email verification token is invalid or expired');
     }
 
-    record.used = true;
-    record.usedAt = Date.now();
+    // Mark token as consumed
+    await this.store.deleteEmailVerificationToken(token);
 
     if (db && this.config?.model) {
       await db.query(this.config.model, 'update', {

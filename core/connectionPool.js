@@ -163,18 +163,27 @@ class ConnectionPool {
     const unhealthy = [];
 
     for (const conn of this.connections) {
+      let healthCheckTimeout = null;
+
       try {
         // Simple query to test connection
         await Promise.race([
           this.testConnection(conn),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Health check timeout')), 5000)
-          )
+          new Promise((_, reject) => {
+            healthCheckTimeout = setTimeout(
+              () => reject(new Error('Health check timeout')),
+              5000
+            );
+          })
         ]);
         conn.healthy = true;
       } catch (error) {
         conn.healthy = false;
         unhealthy.push(conn);
+      } finally {
+        if (healthCheckTimeout) {
+          clearTimeout(healthCheckTimeout);
+        }
       }
     }
 
@@ -276,6 +285,7 @@ class ConnectionPool {
         console.error('[ConnectionPool] Health check error:', err.message)
       );
     }, this.config.healthCheckInterval);
+    this.healthCheckTimer.unref?.();
   }
 
   /**

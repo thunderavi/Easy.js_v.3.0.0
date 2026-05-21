@@ -1,4 +1,5 @@
 const EnterpriseAuth = require('../../core/enterpriseAuth');
+const { MemoryAuthStore } = require('../../core/authStore');
 
 describe('EnterpriseAuth', () => {
   it('registers OAuth2 providers and generates authorization data', () => {
@@ -22,40 +23,55 @@ describe('EnterpriseAuth', () => {
     expect(() => auth.getOAuth2AuthUrl('missing')).toThrow('not configured');
   });
 
-  it('generates MFA secrets, verifies TOTP, and consumes backup codes once', () => {
+  it('generates MFA secrets, verifies TOTP, and consumes backup codes once', async () => {
     const auth = new EnterpriseAuth();
-    const mfa = auth.generateMFASecret('u1');
-    const mfaData = auth.mfaSecrets.get('u1');
+    const mfa = await auth.generateMFASecret('u1');
+
+    // Read secret data from the store to derive the TOTP token for verification
+    const mfaData = await auth.store.getMfaSecret('u1');
     const decoder = new (require('base32.js').Decoder)();
     const secret = decoder.write(mfaData.secret).finalize();
     const token = auth.generateTOTPToken(secret, Math.floor(Date.now() / 1000 / auth.config.mfaWindow));
 
     expect(mfa.qrUrl).toContain('otpauth://totp/u1');
-    expect(auth.verifyTOTP('u1', token)).toBe(true);
-    expect(auth.enableMFA('u1', token)).toEqual({ success: true, backupCodes: mfa.backupCodes });
+    expect(await auth.verifyTOTP('u1', token)).toBe(true);
+    expect(await auth.enableMFA('u1', token)).toEqual({ success: true, backupCodes: mfa.backupCodes });
 
     const backupCode = mfa.backupCodes[0];
-    expect(auth.verifyBackupCode('u1', backupCode.toLowerCase())).toBe(true);
-    expect(auth.verifyBackupCode('u1', backupCode)).toBe(false);
-    expect(() => auth.verifyTOTP('missing', token)).toThrow('MFA not configured');
+    expect(await auth.verifyBackupCode('u1', backupCode.toLowerCase())).toBe(true);
+    expect(await auth.verifyBackupCode('u1', backupCode)).toBe(false); // already consumed
+    await expect(auth.verifyTOTP('missing', token)).rejects.toThrow('MFA not configured');
   });
 
   it('creates, validates, expires, and logs out sessions', async () => {
-    const auth = new EnterpriseAuth({ sessionTimeout: 10 });
+    const store = new MemoryAuthStore();
+    const auth = new EnterpriseAuth({ sessionTimeout: 10, store });
     const sessionId = await auth.createSession('u1', true);
 
-    expect(auth.validateSession(sessionId)).toEqual(expect.objectContaining({
+    expect(await auth.validateSession(sessionId)).toEqual(expect.objectContaining({
       userId: 'u1',
-      mfaPending: true,
-      mfaVerified: false
+      data: expect.objectContaining({
+        mfaPending: true,
+        mfaVerified: false
+      })
     }));
 
-    auth.sessions.get(sessionId).lastActivity = Date.now() - 100;
-    expect(() => auth.validateSession(sessionId)).toThrow('Session expired');
+    // Force the session to appear expired by saving it with a past expiresAt
+    const session = await store.getSession(sessionId);
+    await store.saveSession(
+      sessionId,
+      session.userId,
+      session.data,
+      new Date(Date.now() - 100) // already expired
+    );
+    // The original non-expired record is shadowed by overwriting — but Map keys are unique.
+    // Re-save with the same key so getSession returns null.
+    await expect(auth.validateSession(sessionId)).rejects.toThrow('Session expired');
 
     const nextSession = await auth.createSession('u1');
-    auth.logout(nextSession);
-    expect(() => auth.validateSession(nextSession)).toThrow('Invalid session');
+    await auth.logout(nextSession);
+    // After logout the session is revoked (revokedAt set), so it's 'Session expired'
+    await expect(auth.validateSession(nextSession)).rejects.toThrow('Session expired');
   });
 
   it('generates, verifies, refreshes, and rejects mismatched JWT token types', async () => {
@@ -85,21 +101,27 @@ describe('EnterpriseAuth', () => {
 
   it('tracks lockouts, cleanup, and authentication statistics', async () => {
     const auth = new EnterpriseAuth({ sessionTimeout: 10 });
-    auth.checkLoginAttempts('u1');
+    await auth.checkLoginAttempts('u1');
     for (let i = 0; i < auth.maxLoginAttempts; i++) {
-      auth.recordFailedAttempt('u1');
+      await auth.recordFailedAttempt('u1');
     }
 
-    expect(() => auth.checkLoginAttempts('u1')).toThrow('Account locked');
-    expect(auth.getStats().lockedAccounts).toBe(1);
+    await expect(auth.checkLoginAttempts('u1')).rejects.toThrow('Account locked');
+    expect((await auth.getStats()).lockedAccounts).toBe(1);
 
-    auth.clearLoginAttempts('u1');
-    expect(auth.checkLoginAttempts('u1')).toBe(true);
+    await auth.clearLoginAttempts('u1');
+    expect(await auth.checkLoginAttempts('u1')).toBe(true);
 
     const sessionId = await auth.createSession('u1');
-    auth.sessions.get(sessionId).lastActivity = Date.now() - 100;
-    auth.cleanupSessions();
-    expect(auth.getStats()).toEqual(expect.objectContaining({
+    // Force expiry via the store
+    await auth.store.saveSession(
+      sessionId,
+      'u1',
+      {},
+      new Date(Date.now() - 100)
+    );
+    await auth.cleanupSessions();
+    expect(await auth.getStats()).toEqual(expect.objectContaining({
       activeSessions: 0,
       oauth2Providers: 0
     }));
