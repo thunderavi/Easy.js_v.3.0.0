@@ -6,12 +6,12 @@
   "icon": "public/easyjs-logo-mark.svg",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thunderavi/Easy.js_v.2.0.0.git"
+    "url": "git+https://github.com/thunderavi/Easy.js_v.3.0.0.git"
   },
   "bugs": {
-    "url": "https://github.com/thunderavi/Easy.js_v.2.0.0/issues"
+    "url": "https://github.com/thunderavi/Easy.js_v.3.0.0/issues"
   },
-  "homepage": "https://github.com/thunderavi/Easy.js_v.2.0.0#readme",
+  "homepage": "https://github.com/thunderavi/Easy.js_v.3.0.0#readme",
   "readmeFilename": "README.md",
   "files": [
     "adapters/",
