@@ -5,6 +5,7 @@
 
 const EventEmitter = require('events');
 const jwt = require('jsonwebtoken');
+const { validateJwtSecret } = require('./jwtSecretValidator');
 
 class RealtimeEngine extends EventEmitter {
   constructor(config = {}) {
@@ -16,7 +17,10 @@ class RealtimeEngine extends EventEmitter {
       maxConnections: config.maxConnections || 10000,
       heartbeatInterval: config.heartbeatInterval || 30000,
       messageQueueSize: config.messageQueueSize || 1000,
-      jwtSecret: config.jwtSecret || process.env.JWT_SECRET || 'easy-js-secret-key-change-in-production',
+      jwtSecret: validateJwtSecret(
+        config.jwtSecret || process.env.JWT_SECRET,
+        'JWT_SECRET (RealtimeEngine)'
+      ),
       ...config
     };
 

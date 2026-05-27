@@ -6,12 +6,19 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const base32 = require('base32.js');
+const { validateJwtSecret } = require('./jwtSecretValidator');
 
 class EnterpriseAuth {
   constructor(config = {}) {
     this.config = {
-      jwtSecret: config.jwtSecret || process.env.JWT_SECRET || 'dev-secret',
-      refreshTokenSecret: config.refreshTokenSecret || process.env.REFRESH_TOKEN_SECRET || 'dev-refresh',
+      jwtSecret: validateJwtSecret(
+        config.jwtSecret || process.env.JWT_SECRET,
+        'JWT_SECRET (EnterpriseAuth)'
+      ),
+      refreshTokenSecret: validateJwtSecret(
+        config.refreshTokenSecret || process.env.REFRESH_TOKEN_SECRET,
+        'REFRESH_TOKEN_SECRET (EnterpriseAuth)'
+      ),
       accessTokenExpiry: config.accessTokenExpiry || '15m',
       refreshTokenExpiry: config.refreshTokenExpiry || '7d',
       mfaWindow: config.mfaWindow || 30, // seconds for TOTP
