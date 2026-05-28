@@ -12,7 +12,7 @@
  *   - development: strong valid secret → returns the secret silently
  */
 
-const { validateJwtSecret, KNOWN_DEFAULTS, MIN_SECRET_LENGTH } = require('../../core/jwtSecretValidator');
+const { validateJwtSecret, KNOWN_DEFAULTS, PLACEHOLDER_PATTERNS, isPlaceholder, MIN_SECRET_LENGTH } = require('../../core/jwtSecretValidator');
 
 // Helper: temporarily set NODE_ENV and restore it after each test.
 function withNodeEnv(env, fn) {
@@ -166,6 +166,132 @@ describe('validateJwtSecret – KNOWN_DEFAULTS set', () => {
     expect(KNOWN_DEFAULTS.has('easy-js-secret-key-change-in-production')).toBe(true);
     expect(KNOWN_DEFAULTS.has('dev-secret')).toBe(true);
     expect(KNOWN_DEFAULTS.has('dev-refresh')).toBe(true);
+  });
+});
+
+describe('validateJwtSecret – placeholder pattern detection (production)', () => {
+  // The two values that triggered this PR review feedback.
+  it('throws for "your-refresh-secret-here-change-in-production"', () => {
+    withNodeEnv('production', () => {
+      expect(() =>
+        validateJwtSecret('your-refresh-secret-here-change-in-production', 'REFRESH_TOKEN_SECRET')
+      ).toThrow(/known insecure default/);
+    });
+  });
+
+  it('throws for "your-jwt-refresh-secret-here-change-in-production"', () => {
+    withNodeEnv('production', () => {
+      expect(() =>
+        validateJwtSecret('your-jwt-refresh-secret-here-change-in-production', 'JWT_REFRESH_SECRET')
+      ).toThrow(/known insecure default/);
+    });
+  });
+
+  // Generic "your-*" prefix pattern.
+  it('throws for any secret starting with "your-"', () => {
+    withNodeEnv('production', () => {
+      expect(() =>
+        validateJwtSecret('your-super-secret-value-that-is-long-enough', 'JWT_SECRET')
+      ).toThrow(/known insecure default/);
+    });
+  });
+
+  // Generic "*-change-in-production" suffix pattern.
+  it('throws for any secret ending with "-change-in-production"', () => {
+    withNodeEnv('production', () => {
+      expect(() =>
+        validateJwtSecret('some-long-placeholder-change-in-production', 'JWT_SECRET')
+      ).toThrow(/known insecure default/);
+    });
+  });
+
+  // Generic "replace-*" prefix pattern.
+  it('throws for any secret starting with "replace-"', () => {
+    withNodeEnv('production', () => {
+      expect(() =>
+        validateJwtSecret('replace-with-a-real-secret-that-is-long-enough', 'JWT_SECRET')
+      ).toThrow(/known insecure default/);
+    });
+  });
+
+  // "change-this" exact match.
+  it('throws for "change-this"', () => {
+    withNodeEnv('production', () => {
+      expect(() => validateJwtSecret('change-this', 'JWT_SECRET')).toThrow(
+        /known insecure default/
+      );
+    });
+  });
+
+  // Pattern matching is case-insensitive.
+  it('throws for mixed-case placeholder "YOUR-SECRET-CHANGE-IN-PRODUCTION"', () => {
+    withNodeEnv('production', () => {
+      expect(() =>
+        validateJwtSecret('YOUR-SECRET-CHANGE-IN-PRODUCTION', 'JWT_SECRET')
+      ).toThrow(/known insecure default/);
+    });
+  });
+});
+
+describe('validateJwtSecret – placeholder pattern detection (development)', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    console.warn.mockClear();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('warns (does not throw) for placeholder secrets in development', () => {
+    withNodeEnv('development', () => {
+      const result = validateJwtSecret(
+        'your-refresh-secret-here-change-in-production',
+        'REFRESH_TOKEN_SECRET'
+      );
+      expect(result).toBe('your-refresh-secret-here-change-in-production');
+      expect(console.warn).toHaveBeenCalledWith(
+        expect.stringContaining('known insecure default')
+      );
+    });
+  });
+});
+
+describe('isPlaceholder – unit tests', () => {
+  it('returns true for "your-*" prefixed strings', () => {
+    expect(isPlaceholder('your-secret')).toBe(true);
+    expect(isPlaceholder('your-refresh-secret-here-change-in-production')).toBe(true);
+  });
+
+  it('returns true for "*-change-in-production" suffixed strings', () => {
+    expect(isPlaceholder('anything-change-in-production')).toBe(true);
+  });
+
+  it('returns true for "replace-*" prefixed strings', () => {
+    expect(isPlaceholder('replace-me')).toBe(true);
+    expect(isPlaceholder('replace-with-real-secret')).toBe(true);
+  });
+
+  it('returns true for "change-this"', () => {
+    expect(isPlaceholder('change-this')).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isPlaceholder('YOUR-SECRET')).toBe(true);
+    expect(isPlaceholder('REPLACE-ME')).toBe(true);
+    expect(isPlaceholder('CHANGE-THIS')).toBe(true);
+  });
+
+  it('returns false for a legitimate strong secret', () => {
+    expect(isPlaceholder('a'.repeat(MIN_SECRET_LENGTH))).toBe(false);
+    expect(isPlaceholder('f3a9b2c1d4e5f6a7b8c9d0e1f2a3b4c5')).toBe(false);
+  });
+});
+
+describe('PLACEHOLDER_PATTERNS export', () => {
+  it('is an array of RegExp objects', () => {
+    expect(Array.isArray(PLACEHOLDER_PATTERNS)).toBe(true);
+    expect(PLACEHOLDER_PATTERNS.every((p) => p instanceof RegExp)).toBe(true);
   });
 });
 

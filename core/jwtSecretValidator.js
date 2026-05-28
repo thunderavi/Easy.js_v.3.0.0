@@ -8,6 +8,8 @@
  *   - Secret must be present (non-empty string).
  *   - Secret must be at least 32 characters long.
  *   - Secret must not equal any known default / dev placeholder.
+ *   - Secret must not match generic placeholder patterns (e.g. "your-*",
+ *     "*-change-in-production", "replace-*", "change-this").
  *
  * In non-production environments a console warning is emitted when the
  * secret is missing or matches a known default, and an ephemeral random
@@ -32,6 +34,34 @@ const KNOWN_DEFAULTS = new Set([
   'refresh',
   'change-me',
 ]);
+
+/**
+ * Regex patterns that identify generic placeholder secrets.
+ * A secret matching any of these is treated the same as a KNOWN_DEFAULT.
+ *
+ * Patterns (case-insensitive):
+ *   - starts with "your-"
+ *   - ends with "-change-in-production"
+ *   - starts with "replace-"
+ *   - equals "change-this"
+ */
+const PLACEHOLDER_PATTERNS = [
+  /^your-/i,
+  /-change-in-production$/i,
+  /^replace-/i,
+  /^change-this$/i,
+];
+
+/**
+ * Returns true when the secret looks like a documentation placeholder
+ * rather than a real secret.
+ *
+ * @param {string} secret
+ * @returns {boolean}
+ */
+function isPlaceholder(secret) {
+  return PLACEHOLDER_PATTERNS.some((re) => re.test(secret));
+}
 
 /**
  * Determine whether the current runtime is production.
@@ -72,7 +102,7 @@ function validateJwtSecret(secret, label = 'JWT secret') {
   }
 
   // ── Known default / placeholder ──────────────────────────────────────────
-  if (KNOWN_DEFAULTS.has(secret)) {
+  if (KNOWN_DEFAULTS.has(secret) || isPlaceholder(secret)) {
     if (prod) {
       throw new Error(
         `[Security] ${label} uses a known insecure default value ("${secret}"). ` +
@@ -105,4 +135,4 @@ function validateJwtSecret(secret, label = 'JWT secret') {
   return secret;
 }
 
-module.exports = { validateJwtSecret, KNOWN_DEFAULTS, MIN_SECRET_LENGTH };
+module.exports = { validateJwtSecret, KNOWN_DEFAULTS, PLACEHOLDER_PATTERNS, isPlaceholder, MIN_SECRET_LENGTH };
