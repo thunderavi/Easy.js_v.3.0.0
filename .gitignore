@@ -22,3 +22,8 @@ tmp-easy-plugin-reload-*
 
 # TypeScript build info cache
 tsconfig.tsbuildinfo
+
+# Generated/runtime artifacts
+.npm-cache/
+logs/
+*.log
