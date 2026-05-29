@@ -678,14 +678,25 @@ Examples:
   easyjs doctor
 `);
   }
+activeChildProcess = null;
 
   runEasyJS(filePath) {
+    const { spawn } = require('child_process');
     const indexPath = path.resolve(__dirname, '../index.js');
-    exec(`node "${indexPath}" "${filePath}"`, (error) => {
-      if (error) {
-        Logger.error(error.message);
-        process.exit(1);
-      }
+
+    if (this.activeChildProcess) {
+      this.activeChildProcess.kill('SIGTERM');
+      this.activeChildProcess = null;
+    }
+
+    this.activeChildProcess = spawn('node', [indexPath, filePath], { stdio: 'inherit' });
+
+    this.activeChildProcess.on('error', (error) => {
+      Logger.error(`Failed to start process: ${error.message}`);
+    });
+
+    this.activeChildProcess.on('close', (code) => {
+      this.activeChildProcess = null;
     });
   }
 
@@ -697,7 +708,7 @@ Examples:
     fs.watch(dir, { recursive: true }, (eventType, filename) => {
       if (filename && filename.endsWith('.easy')) {
         Logger.info(`File changed: ${filename}`);
-        Logger.info('Restarting server...');
+        Logger.info('Restarting server cleanly...');
         this.runEasyJS(filePath);
       }
     });
