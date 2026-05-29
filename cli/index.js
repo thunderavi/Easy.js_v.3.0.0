@@ -689,17 +689,20 @@ activeChildProcess = null;
       this.activeChildProcess = null;
     }
 
-    this.activeChildProcess = spawn('node', [indexPath, filePath], { stdio: 'inherit' });
+    const child = spawn('node', [indexPath, filePath], { stdio: 'inherit' });
+    this.activeChildProcess = child;
 
-    this.activeChildProcess.on('error', (error) => {
+    
+    child.on('error', (error) => {
       Logger.error(`Failed to start process: ${error.message}`);
     });
 
-    this.activeChildProcess.on('close', (code) => {
-      this.activeChildProcess = null;
+    child.on('close', (code) => {
+      if (this.activeChildProcess === child) {
+        this.activeChildProcess = null;
+      }
     });
   }
-
   runWithWatcher(filePath) {
     const dir = path.dirname(filePath);
     Logger.info(`Watching directory: ${dir}`);
