@@ -169,6 +169,67 @@ describe('TransactionManager', () => {
     expect(retry.deadLetterQueue).toHaveLength(0);
   });
 
+  it('detects read-write conflict when overlapping resource is not the first in the set', async () => {
+    const manager = new TransactionManager({ maxRetries: 0, enableDLQ: false });
+    const tx1 = await manager.beginTransaction('tx-rw-1');
+    const tx2 = await manager.beginTransaction('tx-rw-2');
+
+    manager.activeTransactions.get(tx1).readSet = new Set(['a', 'users', 'z']);
+    manager.activeTransactions.get(tx2).writeSet = new Set(['x', 'y', 'users']);
+
+    expect(manager.checkConflicts(tx1)).toBe(false);
+    await expect(manager.commit(tx1)).rejects.toThrow('Transaction conflict detected');
+  });
+
+  it('detects write-read conflict when overlapping resource is not the first', async () => {
+    const manager = new TransactionManager({ maxRetries: 0, enableDLQ: false });
+    const tx1 = await manager.beginTransaction('tx-wr-1');
+    const tx2 = await manager.beginTransaction('tx-wr-2');
+
+    manager.activeTransactions.get(tx1).writeSet = new Set(['a', 'b', 'users', 'c']);
+    manager.activeTransactions.get(tx2).readSet = new Set(['users']);
+
+    expect(manager.checkConflicts(tx1)).toBe(false);
+    await expect(manager.commit(tx1)).rejects.toThrow('Transaction conflict detected');
+  });
+
+  it('detects write-write conflict when overlapping resource is not the first', async () => {
+    const manager = new TransactionManager({ maxRetries: 0, enableDLQ: false });
+    const tx1 = await manager.beginTransaction('tx-ww-1');
+    const tx2 = await manager.beginTransaction('tx-ww-2');
+
+    manager.activeTransactions.get(tx1).writeSet = new Set(['a', 'b', 'c', 'posts']);
+    manager.activeTransactions.get(tx2).writeSet = new Set(['x', 'posts']);
+
+    expect(manager.checkConflicts(tx1)).toBe(false);
+    await expect(manager.commit(tx1)).rejects.toThrow('Transaction conflict detected');
+  });
+
+  it('detects all three conflict paths with single-resource sets (backward compatibility)', async () => {
+    const manager = new TransactionManager({ maxRetries: 0, enableDLQ: false });
+    const tx1 = await manager.beginTransaction('tx-bc-1');
+    const tx2 = await manager.beginTransaction('tx-bc-2');
+    manager.activeTransactions.get(tx1).readSet.add('posts');
+    manager.activeTransactions.get(tx2).writeSet.add('posts');
+
+    expect(manager.checkConflicts(tx1)).toBe(false);
+    await expect(manager.commit(tx1)).rejects.toThrow('Transaction conflict detected');
+    expect(manager.getDeadLetterQueue()).toHaveLength(0);
+
+    const retrying = new TransactionManager({ maxRetries: 1, retryDelay: 1 });
+    const tx = await retrying.beginTransaction('tx-retry-fail');
+    await retrying.executeOperation(tx, {
+      type: 'WRITE',
+      resource: 'invalid',
+      validate: () => false
+    }, async () => 'invalid');
+
+    const assertion = expect(retrying.commit(tx)).rejects.toThrow('Operation validation failed for invalid');
+    await jest.advanceTimersByTimeAsync(1);
+    await assertion;
+    expect(retrying.getDeadLetterQueue()).toHaveLength(1);
+  });
+
   it('detects transaction conflicts and retry exhaustion without DLQ', async () => {
     const manager = new TransactionManager({ maxRetries: 0, enableDLQ: false });
     const tx1 = await manager.beginTransaction('tx-conflict-1');
