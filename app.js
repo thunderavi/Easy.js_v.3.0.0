@@ -133,14 +133,81 @@ class AppFactory {
     this.app.use(helmet());
 
     // CORS
-    this.app.use(cors({
-      origin: this.config.corsOrigin || '*',
-      credentials: true,
-      optionsSuccessStatus: 200
-    }));
+    this.app.use(cors(this.getCorsOptions()));
 
     // Trust proxy
     this.app.set('trust proxy', 1);
+  }
+
+  getCorsOptions() {
+    const origins = this.getCorsOrigins();
+    const credentials = this.getCorsCredentials();
+    const hasWildcard = origins.includes('*');
+
+    if (!credentials && hasWildcard) {
+      return {
+        origin: '*',
+        credentials: false,
+        optionsSuccessStatus: 200
+      };
+    }
+
+    return {
+      origin: (origin, callback) => {
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        if (origins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(null, false);
+      },
+      credentials,
+      optionsSuccessStatus: 200
+    };
+  }
+
+  getCorsOrigins() {
+    const configuredOrigin = this.config.corsOrigin ?? process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '*';
+    const origins = Array.isArray(configuredOrigin)
+      ? configuredOrigin
+      : String(configuredOrigin).split(',');
+
+    const normalizedOrigins = origins
+      .map(origin => String(origin).trim())
+      .filter(Boolean);
+
+    return normalizedOrigins.length > 0 ? normalizedOrigins : ['*'];
+  }
+
+  getCorsCredentials() {
+    if (typeof this.config.corsCredentials === 'boolean') {
+      return this.config.corsCredentials;
+    }
+
+    return AppFactory.parseBoolean(process.env.CORS_CREDENTIALS, false);
+  }
+
+  static parseBoolean(value, fallback = false) {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value !== 'string') {
+      return fallback;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) {
+      return true;
+    }
+    if (['false', '0', 'no', 'off'].includes(normalized)) {
+      return false;
+    }
+
+    return fallback;
   }
 
   setupCoreMiddleware() {

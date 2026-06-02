@@ -46,3 +46,21 @@ easyjs doctor
 ```
 
 before deploying.
+
+## CORS
+
+Credentialed CORS must use an explicit origin allowlist. Keep credentials off
+for public wildcard APIs:
+
+```text
+CORS_ORIGIN=*
+CORS_CREDENTIALS=false
+```
+
+For cookie or authorization-header flows that need browser credentials, list the
+approved origins and opt in to credentials:
+
+```text
+CORS_ORIGIN=https://app.example.com,https://admin.example.com
+CORS_CREDENTIALS=true
+```
