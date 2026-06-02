@@ -1,10 +1,31 @@
 const AuthManager = require('../../core/auth');
+const { DatabaseAuthStore, MemoryAuthStore } = require('../../core/authStore');
+
+const JWT_SECRET = 'test-access-secret-at-least-32-characters';
+const REFRESH_SECRET = 'test-refresh-secret-at-least-32-characters';
 
 describe('AuthManager', () => {
+  it('selects memory or database auth stores from constructor options', () => {
+    const memoryAuth = new AuthManager({
+      jwtSecret: JWT_SECRET,
+      refreshSecret: REFRESH_SECRET
+    });
+    expect(memoryAuth.store).toBeInstanceOf(MemoryAuthStore);
+
+    const knex = jest.fn();
+    const databaseAuth = new AuthManager({
+      jwtSecret: JWT_SECRET,
+      refreshSecret: REFRESH_SECRET,
+      knex
+    });
+    expect(databaseAuth.store).toBeInstanceOf(DatabaseAuthStore);
+    expect(databaseAuth.store.knex).toBe(knex);
+  });
+
   it('issues, verifies, rotates, and revokes token pairs', async () => {
     const auth = new AuthManager({
-      jwtSecret: 'access-secret',
-      refreshSecret: 'refresh-secret',
+      jwtSecret: JWT_SECRET,
+      refreshSecret: REFRESH_SECRET,
       jwtExpiry: '1h',
       refreshExpiry: '1h'
     });

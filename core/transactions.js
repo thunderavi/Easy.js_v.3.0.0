@@ -304,13 +304,13 @@ class TransactionManager {
       if (otherTx.status !== 'ACTIVE') continue;
 
       // Read-Write conflict
-      if (transaction.readSet.has(...otherTx.writeSet)) return false;
+      if ([...otherTx.writeSet].some(r => transaction.readSet.has(r))) return false;
       
       // Write-Read conflict
-      if (transaction.writeSet.has(...otherTx.readSet)) return false;
+      if ([...otherTx.readSet].some(r => transaction.writeSet.has(r))) return false;
       
       // Write-Write conflict
-      if (transaction.writeSet.has(...otherTx.writeSet)) return false;
+      if ([...otherTx.writeSet].some(r => transaction.writeSet.has(r))) return false;
     }
 
     return true;

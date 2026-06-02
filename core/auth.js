@@ -3,19 +3,26 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const Logger = require('./logger');
 const { createAuthStore } = require('./authStore');
+const { validateJwtSecret } = require('./jwtSecretValidator');
 
 class AuthManager {
   constructor(options = {}) {
     this.config = null;
-    this.jwtSecret = options.jwtSecret || process.env.JWT_SECRET || 'easy-js-secret-key-change-in-production';
+    this.jwtSecret = validateJwtSecret(
+      options.jwtSecret || process.env.JWT_SECRET,
+      'JWT_SECRET'
+    );
     this.jwtExpiry = options.jwtExpiry || process.env.JWT_EXPIRY || '15m';
-    this.refreshSecret = options.refreshSecret || process.env.JWT_REFRESH_SECRET || `${this.jwtSecret}-refresh`;
+    this.refreshSecret = validateJwtSecret(
+      options.refreshSecret || process.env.JWT_REFRESH_SECRET,
+      'JWT_REFRESH_SECRET'
+    );
     this.refreshExpiry = options.refreshExpiry || process.env.JWT_REFRESH_EXPIRY || '7d';
     this.resetTokenExpiryMs = options.resetTokenExpiryMs || 60 * 60 * 1000;
     this.verificationTokenExpiryMs = options.verificationTokenExpiryMs || 24 * 60 * 60 * 1000;
     // Pluggable auth store — defaults to MemoryAuthStore for dev/tests.
     // Pass options.store = new DatabaseAuthStore({ knex }) for production.
-    this.store = options.store || createAuthStore();
+    this.store = options.store || createAuthStore(options);
   }
 
   initialize(authConfig) {

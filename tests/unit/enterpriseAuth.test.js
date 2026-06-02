@@ -1,7 +1,27 @@
 const EnterpriseAuth = require('../../core/enterpriseAuth');
-const { MemoryAuthStore } = require('../../core/authStore');
+const { DatabaseAuthStore, MemoryAuthStore } = require('../../core/authStore');
+
+const JWT_SECRET = 'test-enterprise-access-secret-32-characters';
+const REFRESH_SECRET = 'test-enterprise-refresh-secret-32-characters';
 
 describe('EnterpriseAuth', () => {
+  it('selects memory or database auth stores from constructor config', () => {
+    const memoryAuth = new EnterpriseAuth({
+      jwtSecret: JWT_SECRET,
+      refreshTokenSecret: REFRESH_SECRET
+    });
+    expect(memoryAuth.store).toBeInstanceOf(MemoryAuthStore);
+
+    const knex = jest.fn();
+    const databaseAuth = new EnterpriseAuth({
+      jwtSecret: JWT_SECRET,
+      refreshTokenSecret: REFRESH_SECRET,
+      knex
+    });
+    expect(databaseAuth.store).toBeInstanceOf(DatabaseAuthStore);
+    expect(databaseAuth.store.knex).toBe(knex);
+  });
+
   it('registers OAuth2 providers and generates authorization data', () => {
     const auth = new EnterpriseAuth();
     auth.registerOAuth2Provider('github', {

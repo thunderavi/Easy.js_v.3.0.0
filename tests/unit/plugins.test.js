@@ -132,25 +132,29 @@ describe('PluginSystem', () => {
   });
 
   it('loads plugins from files and directories while tolerating missing directories', async () => {
-    const dir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-easy-plugin-'));
-    const pluginPath = path.join(dir, 'sample.js');
-    const ignoredPath = path.join(dir, 'README.md');
-    fs.writeFileSync(pluginPath, `module.exports = {
-      name: 'sample',
-      version: '1.0.0',
-      hooks: { boot: async context => ({ ...context, booted: true }) }
-    };`);
-    fs.writeFileSync(ignoredPath, 'ignore me');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tmp-easy-plugin-'));
+    try {
+      const pluginPath = path.join(dir, 'sample.js');
+      const ignoredPath = path.join(dir, 'README.md');
+      fs.writeFileSync(pluginPath, `module.exports = {
+        name: 'sample',
+        version: '1.0.0',
+        hooks: { boot: async context => ({ ...context, booted: true }) }
+      };`);
+      fs.writeFileSync(ignoredPath, 'ignore me');
 
-    const system = new PluginSystem({ pluginDir: dir });
-    await expect(system.loadPluginFromFile(pluginPath)).resolves.toBe('sample');
-    await expect(system.executeHook('boot', {})).resolves.toEqual({ booted: true });
+      const system = new PluginSystem({ pluginDir: dir });
+      await expect(system.loadPluginFromFile(pluginPath)).resolves.toBe('sample');
+      await expect(system.executeHook('boot', {})).resolves.toEqual({ booted: true });
 
-    const second = new PluginSystem({ pluginDir: dir });
-    await expect(second.loadPluginsFromDirectory()).resolves.toEqual(['sample']);
-    await expect(second.loadPluginsFromDirectory(path.join(dir, 'missing'))).resolves.toEqual([]);
+      const second = new PluginSystem({ pluginDir: dir });
+      await expect(second.loadPluginsFromDirectory()).resolves.toEqual(['sample']);
+      await expect(second.loadPluginsFromDirectory(path.join(dir, 'missing'))).resolves.toEqual([]);
 
-    await expect(system.loadPluginFromFile(path.join(dir, 'missing.js'))).rejects.toThrow();
+      await expect(system.loadPluginFromFile(path.join(dir, 'missing.js'))).rejects.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('handles hook, generator, validator, middleware, and hot reload edge paths', async () => {
@@ -202,12 +206,16 @@ describe('PluginSystem', () => {
       callback({ mtime: new Date(2) }, { mtime: new Date(1) });
     });
     const reloadError = jest.fn();
-    const dir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-easy-plugin-reload-'));
-    const pluginPath = path.join(dir, 'reload.js');
-    fs.writeFileSync(pluginPath, `module.exports = { name: 'reload', version: '1.0.0' };`);
-    system.on('plugin:reload:error', reloadError);
-    system.enableHotReload('reload', pluginPath);
-    expect(watchFile).toHaveBeenCalledWith(pluginPath, expect.any(Function));
-    watchFile.mockRestore();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tmp-easy-plugin-reload-'));
+    try {
+      const pluginPath = path.join(dir, 'reload.js');
+      fs.writeFileSync(pluginPath, `module.exports = { name: 'reload', version: '1.0.0' };`);
+      system.on('plugin:reload:error', reloadError);
+      system.enableHotReload('reload', pluginPath);
+      expect(watchFile).toHaveBeenCalledWith(pluginPath, expect.any(Function));
+      watchFile.mockRestore();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
