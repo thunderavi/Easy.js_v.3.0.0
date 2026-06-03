@@ -22,6 +22,7 @@ type ChartContextProps = {
   config: ChartConfig
 }
 
+// FIX 1: Explicit type for chart payload items (replaces implicit any)
 type ChartPayloadItem = {
   color?: string
   dataKey?: string | number
@@ -55,6 +56,7 @@ type ChartTooltipContentProps = React.ComponentProps<'div'> & {
   payload?: ChartPayloadItem[]
 }
 
+// FIX 2: Explicit type for legend payload items (replaces implicit any)
 type ChartLegendPayloadItem = {
   color?: string
   dataKey?: string | number
@@ -313,13 +315,16 @@ function ChartLegendContent({
         className,
       )}
     >
-      {payload.map((item) => {
+      {/* FIX 3: Use ChartLegendPayloadItem instead of unknown so properties
+          are accessible without type errors */}
+      {payload.map((item: ChartLegendPayloadItem, index: number) => {
         const key = `${nameKey || item.dataKey || 'value'}`
         const itemConfig = getPayloadConfigFromPayload(config, item, key)
 
         return (
           <div
-            key={item.value}
+            // FIX 4: Use index as fallback key since item.value may be undefined
+            key={`${item.value ?? ''}-${index}`}
             className="[&>svg]:text-muted-foreground flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3"
           >
             {itemConfig?.icon && !hideIcon ? (
@@ -328,6 +333,7 @@ function ChartLegendContent({
               <div
                 className="h-2 w-2 shrink-0 rounded-[2px]"
                 style={{
+                  // FIX 5: item.color is now typed as string | undefined — safe
                   backgroundColor: item.color,
                 }}
               />

@@ -37,6 +37,8 @@ function PaginationItem({ ...props }: React.ComponentProps<'li'>) {
   return <li data-slot="pagination-item" {...props} />
 }
 
+// FIX 1: PaginationLinkProps picks 'size' from Button props exactly once.
+// No duplicate — this is the single source of the size prop type.
 type PaginationLinkProps = {
   isActive?: boolean
 } & Pick<React.ComponentProps<typeof Button>, 'size'> &
@@ -76,7 +78,9 @@ function PaginationPrevious({
       className={cn('gap-1 px-2.5 sm:pl-2.5', className)}
       {...props}
     >
-      <ChevronLeftIcon />
+      {/* FIX 2: Pass explicit aria-hidden and className to lucide icons
+          to satisfy strict @types/react@18 + lucide-react JSX prop checks */}
+      <ChevronLeftIcon aria-hidden="true" className="size-4" />
       <span className="hidden sm:block">Previous</span>
     </PaginationLink>
   )
@@ -94,7 +98,8 @@ function PaginationNext({
       {...props}
     >
       <span className="hidden sm:block">Next</span>
-      <ChevronRightIcon />
+      {/* FIX 3: Same fix for ChevronRightIcon */}
+      <ChevronRightIcon aria-hidden="true" className="size-4" />
     </PaginationLink>
   )
 }
@@ -110,7 +115,8 @@ function PaginationEllipsis({
       className={cn('flex size-9 items-center justify-center', className)}
       {...props}
     >
-      <MoreHorizontalIcon className="size-4" />
+      {/* FIX 4: MoreHorizontalIcon already has className — add aria-hidden too */}
+      <MoreHorizontalIcon aria-hidden="true" className="size-4" />
       <span className="sr-only">More pages</span>
     </span>
   )
