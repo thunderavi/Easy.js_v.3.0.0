@@ -17,7 +17,7 @@ class ASTBuilder {
       docs: false,
       admin: false,
       roles: [],
-      jobs: []
+      jobs: [],
     };
   }
 
@@ -46,7 +46,7 @@ class ASTBuilder {
   stripComments(content) {
     return content
       .split('\n')
-      .map(line => line.replace(/(^|\s)#.*$/, '').replace(/(^|\s)\/\/.*$/, ''))
+      .map((line) => line.replace(/(^|\s)#.*$/, '').replace(/(^|\s)\/\/.*$/, ''))
       .join('\n');
   }
 
@@ -63,14 +63,41 @@ class ASTBuilder {
     while ((match = useRegex.exec(content)) !== null) {
       const type = match[1].toLowerCase();
       const value = match[2].trim();
-      if ([
-        'mongodb', 'mongo', 'mysql', 'mariadb', 'planetscale',
-        'postgres', 'postgresql', 'pg', 'cockroach', 'cockroachdb', 'neon',
-        'redis', 'firebase', 'firestore', 'dynamodb', 'supabase',
-        'elasticsearch', 'elastic', 'opensearch', 'cassandra',
-        'sqlite', 'sqlite3', 'libsql', 'turso', 'mssql', 'sqlserver',
-        'neo4j', 'oracle', 'oracledb', 'snowflake', 'bigquery'
-      ].includes(type)) {
+      if (
+        [
+          'mongodb',
+          'mongo',
+          'mysql',
+          'mariadb',
+          'planetscale',
+          'postgres',
+          'postgresql',
+          'pg',
+          'cockroach',
+          'cockroachdb',
+          'neon',
+          'redis',
+          'firebase',
+          'firestore',
+          'dynamodb',
+          'supabase',
+          'elasticsearch',
+          'elastic',
+          'opensearch',
+          'cassandra',
+          'sqlite',
+          'sqlite3',
+          'libsql',
+          'turso',
+          'mssql',
+          'sqlserver',
+          'neo4j',
+          'oracle',
+          'oracledb',
+          'snowflake',
+          'bigquery',
+        ].includes(type)
+      ) {
         this.ast.databases.push({ type, connection: value });
       } else {
         this.ast.middleware.push(match[1]);
@@ -93,7 +120,7 @@ class ASTBuilder {
       this.ast.routes.push({
         method: match[1],
         path: match[2],
-        model: match[3]
+        model: match[3],
       });
     }
   }
@@ -144,7 +171,10 @@ class ASTBuilder {
     while ((match = roleRegex.exec(content)) !== null) {
       this.ast.roles.push({
         role: match[1],
-        permissions: match[2].split(',').map(item => item.trim()).filter(Boolean)
+        permissions: match[2]
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean),
       });
     }
   }
@@ -156,7 +186,7 @@ class ASTBuilder {
       this.ast.jobs.push({
         name: match[1],
         every: match[2] || null,
-        body: match[3].trim()
+        body: match[3].trim(),
       });
     }
   }
@@ -209,7 +239,7 @@ class ASTBuilder {
     }
     return {
       port: portToken.value,
-      host: '0.0.0.0'
+      host: '0.0.0.0',
     };
   }
 
@@ -222,8 +252,8 @@ class ASTBuilder {
         type: 'database',
         value: {
           type: 'mongodb',
-          connection: connToken?.value || 'mongodb://localhost:27017/db'
-        }
+          connection: connToken?.value || 'mongodb://localhost:27017/db',
+        },
       };
     } else if (nextToken?.type === 'MYSQL') {
       const connToken = tokens[start + 2];
@@ -231,13 +261,13 @@ class ASTBuilder {
         type: 'database',
         value: {
           type: 'mysql',
-          connection: connToken?.value || 'mysql://root:root@localhost:3306/db'
-        }
+          connection: connToken?.value || 'mysql://root:root@localhost:3306/db',
+        },
       };
     } else if (nextToken?.type === 'IDENTIFIER') {
       return {
         type: 'middleware',
-        value: nextToken.value
+        value: nextToken.value,
       };
     }
 
@@ -259,7 +289,7 @@ class ASTBuilder {
 
     return {
       name: nameToken.value,
-      schema: schema
+      schema: schema,
     };
   }
 
@@ -268,13 +298,25 @@ class ASTBuilder {
     const lines = blockContent.split('\n');
 
     for (const line of lines) {
-      const [key, type] = line.trim().split(':').map(s => s.trim());
+      const [key, type] = line
+        .trim()
+        .split(':')
+        .map((s) => s.trim());
       if (key && type) {
         schema[key] = type;
       }
     }
 
     return schema;
+  }
+
+  findStatementEnd(tokens, start) {
+    for (let i = start; i < tokens.length; i++) {
+      if (tokens[i].type === 'NEWLINE') {
+        return i;
+      }
+    }
+    return tokens.length;
   }
 
   parseRoute(tokens, start) {
@@ -284,9 +326,12 @@ class ASTBuilder {
       throw new Error(`${method} requires a valid path`);
     }
 
-    const fromIndex = tokens.findIndex((t, i) => i > start && t.type === 'FROM');
+    const stmtEnd = this.findStatementEnd(tokens, start);
+    const fromIndex = tokens.findIndex((t, i) => i > start && i < stmtEnd && t.type === 'FROM');
     if (fromIndex === -1) {
-      throw new Error(`${method} route requires FROM clause`);
+      throw new Error(
+        `${method} route at "${pathToken.value}" requires a FROM clause in the same statement`
+      );
     }
 
     const modelToken = tokens[fromIndex + 1];
@@ -297,16 +342,18 @@ class ASTBuilder {
     return {
       method,
       path: pathToken.value,
-      model: modelToken.value
+      model: modelToken.value,
     };
   }
 
   parseAuth(tokens, start) {
     const modelIndex = start + 1;
-    const byIndex = tokens.findIndex((t, i) => i > start && t.type === 'BY');
+
+    const stmtEnd = this.findStatementEnd(tokens, start);
+    const byIndex = tokens.findIndex((t, i) => i > start && i < stmtEnd && t.type === 'BY');
 
     if (byIndex === -1) {
-      throw new Error('AUTH requires BY clause');
+      throw new Error('AUTH requires a BY clause in the same statement');
     }
 
     const modelToken = tokens[modelIndex];
@@ -314,7 +361,7 @@ class ASTBuilder {
 
     return {
       model: modelToken?.value || 'users',
-      type: typeToken?.value || 'jwt'
+      type: typeToken?.value || 'jwt',
     };
   }
 
@@ -325,7 +372,7 @@ class ASTBuilder {
     }
 
     return {
-      path: pathToken.value
+      path: pathToken.value,
     };
   }
 
@@ -341,7 +388,7 @@ class ASTBuilder {
 
     return {
       model: modelToken.value,
-      rules: rules
+      rules: rules,
     };
   }
 
@@ -350,7 +397,10 @@ class ASTBuilder {
     const lines = blockContent.split('\n');
 
     for (const line of lines) {
-      const [field, ...ruleParts] = line.trim().split(':').map(s => s.trim());
+      const [field, ...ruleParts] = line
+        .trim()
+        .split(':')
+        .map((s) => s.trim());
       if (field && ruleParts.length > 0) {
         rules[field] = ruleParts.join(':');
       }
