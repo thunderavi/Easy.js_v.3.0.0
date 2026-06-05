@@ -105,18 +105,18 @@ class RuntimeEngine {
     const validator = new ValidationEngine();
     validator.loadRules(config.validations);
 
-    // Setup routes
-    const router = new RouterManager();
-    router.registerRoutes(this.app, config.routes, this.db, validator);
-
-    // Setup protected routes
-    this.setupProtectedRoutes();
-
     // Setup performance monitoring middleware
     this.setupMonitoringMiddleware();
 
     // Setup cache middleware
     this.setupCacheMiddleware();
+
+    // Setup protected routes
+    this.setupProtectedRoutes();
+
+    // Setup routes
+    const router = new RouterManager();
+    router.registerRoutes(this.app, config.routes, this.db, validator);
 
     // Error handling middleware
     this.setupErrorHandling();
