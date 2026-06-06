@@ -10,6 +10,31 @@ Author: Avi Ranjan Prasad
 
 > Validation note: core adapters are covered by local contract tests. Paid/cloud/provider adapters such as Supabase, Firebase, DynamoDB, Elasticsearch/OpenSearch, Cassandra, and Neo4j require `LIVE_ADAPTERS=true` plus real service credentials or local services for live validation. See [Live Adapter Validation](docs/LIVE_ADAPTERS.md).
 
+## 📑 Table of Contents
+
+- [easy.js - Backend Framework](#easyjs---backend-framework-for-nodejsexpress)
+- [Start in One Minute](#start-in-one-minute)
+- [What is easy.js](#what-is-easyjs)
+- [Quick Start](#quick-start)
+  - [Installation](#installation)
+  - [Create a Project](#create-a-project)
+  - [Your First API](#your-first-api)
+- [Language Syntax](#language-syntax)
+- [Project Structure](#project-structure)
+- [Security Features](#security-features)
+- [Environment Configuration](#environment-variables)
+- [Database Support](#database-support)
+- [Validation](#validation)
+- [API Response Format](#api-response-format)
+- [CLI Commands](#cli-commands)
+- [Deployment](#deployment)
+- [Testing Your API](#testing-your-api)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [Contributing](#contributing)
+
+
 ## Start in One Minute
 
 ```bash
