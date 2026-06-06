@@ -60,23 +60,32 @@ class EnterpriseAuth {
   /**
    * Generate authorization URL for OAuth2
    */
-  getOAuth2AuthUrl(provider) {
-    const providerConfig = this.oauth2Providers.get(provider);
-    if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
+ async getOAuth2AuthUrl(provider) {
+  const providerConfig = this.oauth2Providers.get(provider);
+  if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
-    const state = crypto.randomBytes(32).toString('hex');
-    const codeChallenge = this.generateCodeChallenge();
+  const state = crypto.randomBytes(32).toString('hex');
+  const codeChallenge = this.generateCodeChallenge();
 
-    return {
-      url: `${providerConfig.authorizationUrl}?client_id=${providerConfig.clientId}&redirect_uri=${providerConfig.redirectUri}&scope=${providerConfig.scopes.join(' ')}&state=${state}&code_challenge=${codeChallenge}`,
-      state,
-      codeChallenge
-    };
-  }
+  // ✅ NEW: persist OAuth state
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-  /**
-   * Generate PKCE code challenge
-   */
+  await this.store.saveOAuthState(
+    state,
+    {
+      provider,
+      codeChallenge,
+      redirectUri: providerConfig.redirectUri
+    },
+    expiresAt
+  );
+
+  return {
+    url: `${providerConfig.authorizationUrl}?client_id=${providerConfig.clientId}&redirect_uri=${providerConfig.redirectUri}&scope=${providerConfig.scopes.join(' ')}&state=${state}&code_challenge=${codeChallenge}`,
+    state,
+    codeChallenge
+  };
+}
   generateCodeChallenge() {
     return crypto.randomBytes(32).toString('hex');
   }
@@ -84,20 +93,32 @@ class EnterpriseAuth {
   /**
    * Exchange OAuth2 code for token
    */
-  async exchangeOAuth2Code(provider, code, codeVerifier) {
-    const providerConfig = this.oauth2Providers.get(provider);
-    if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
+  async exchangeOAuth2Code(provider, code, state, codeVerifier) {
+  const providerConfig = this.oauth2Providers.get(provider);
+  if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
-    // This would make actual HTTP request to token endpoint
-    // Returning mock response for demonstration
-    return {
-      access_token: 'oauth2_token_' + crypto.randomBytes(32).toString('hex'),
-      token_type: 'Bearer',
-      expires_in: 3600,
-      refresh_token: 'refresh_token_' + crypto.randomBytes(32).toString('hex')
-    };
+  // ✅ NEW: validate OAuth state
+  const stored = await this.store.getOAuthState(state);
+
+  if (!stored) {
+    throw new Error('Invalid or expired OAuth state');
   }
 
+  if (stored.provider !== provider) {
+    throw new Error('OAuth provider mismatch');
+  }
+
+  // ✅ NEW: prevent replay attack
+  await this.store.deleteOAuthState(state);
+
+  // (existing mock token response stays unchanged)
+  return {
+    access_token: 'oauth2_token_' + crypto.randomBytes(32).toString('hex'),
+    token_type: 'Bearer',
+    expires_in: 3600,
+    refresh_token: 'refresh_token_' + crypto.randomBytes(32).toString('hex')
+  };
+}
   /**
    * Generate MFA secret for user and persist it in the auth store.
    * NOW ASYNC — callers must await.
@@ -260,7 +281,7 @@ class EnterpriseAuth {
     try {
       const secret = type === 'access' ? this.config.jwtSecret : this.config.refreshTokenSecret;
       const decoded = jwt.verify(token, secret);
-      
+
       if (decoded.type !== type) {
         throw new Error('Invalid token type');
       }
