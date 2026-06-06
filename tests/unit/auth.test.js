@@ -136,4 +136,47 @@ describe('AuthManager', () => {
     auth.requireRole('admin')({ user: { role: 'admin' } }, res, roleNext);
     expect(roleNext).toHaveBeenCalled();
   });
+
+  describe('Cleanup Timer', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      jest.restoreAllMocks();
+    });
+
+    it('starts cleanup timer if cleanupIntervalMs > 0', () => {
+      const auth = new AuthManager({ cleanupIntervalMs: 5000 });
+      expect(auth._cleanupTimer).not.toBeNull();
+      
+      const cleanupSpy = jest.spyOn(auth, 'cleanupExpired').mockResolvedValue({ removed: 0 });
+      
+      jest.advanceTimersByTime(5000);
+      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+      
+      jest.advanceTimersByTime(5000);
+      expect(cleanupSpy).toHaveBeenCalledTimes(2);
+      
+      auth.stopCleanup();
+      expect(auth._cleanupTimer).toBeNull();
+      
+      jest.advanceTimersByTime(5000);
+      expect(cleanupSpy).toHaveBeenCalledTimes(2); // Should not increase
+    });
+
+    it('does not start cleanup timer if cleanupIntervalMs is 0', () => {
+      const auth = new AuthManager({ cleanupIntervalMs: 0 });
+      expect(auth._cleanupTimer).toBeNull();
+    });
+
+    it('delegates cleanupExpired to the store', async () => {
+      const auth = new AuthManager({ cleanupIntervalMs: 0 });
+      auth.store.cleanupExpired = jest.fn().mockResolvedValue({ removed: 5 });
+      const result = await auth.cleanupExpired();
+      expect(auth.store.cleanupExpired).toHaveBeenCalled();
+      expect(result).toEqual({ removed: 5 });
+    });
+  });
 });

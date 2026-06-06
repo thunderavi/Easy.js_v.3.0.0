@@ -23,11 +23,63 @@ class AuthManager {
     // Pluggable auth store — defaults to MemoryAuthStore for dev/tests.
     // Pass options.store = new DatabaseAuthStore({ knex }) for production.
     this.store = options.store || createAuthStore(options);
+
+    this.cleanupIntervalMs = options.cleanupIntervalMs !== undefined ? options.cleanupIntervalMs : 3600000; // default 1 hour
+    this._cleanupTimer = null;
+    if (this.cleanupIntervalMs > 0) {
+      this.startCleanup();
+    }
   }
 
   initialize(authConfig) {
     this.config = authConfig;
     Logger.debug(`Auth initialized for model: ${authConfig.model}, type: ${authConfig.type}`);
+  }
+
+  /**
+   * Perform cleanup of expired/revoked tokens and sessions.
+   * Delegates to the underlying auth store.
+   */
+  async cleanupExpired() {
+    if (this.store && typeof this.store.cleanupExpired === 'function') {
+      try {
+        return await this.store.cleanupExpired();
+      } catch (error) {
+        Logger.error(`Error during token cleanup: ${error.message}`);
+      }
+    }
+    return { removed: 0 };
+  }
+
+  /**
+   * Starts the background interval to clean up expired tokens.
+   */
+  startCleanup() {
+    if (this._cleanupTimer) {
+      this.stopCleanup();
+    }
+    if (this.cleanupIntervalMs > 0) {
+      this._cleanupTimer = setInterval(() => {
+        this.cleanupExpired().catch(err => {
+          Logger.error(`Unhandled error in auth cleanup interval: ${err.message}`);
+        });
+      }, this.cleanupIntervalMs);
+      
+      // Prevent the timer from keeping the Node process alive indefinitely
+      if (this._cleanupTimer.unref) {
+        this._cleanupTimer.unref();
+      }
+    }
+  }
+
+  /**
+   * Stops the background interval for cleaning up expired tokens.
+   */
+  stopCleanup() {
+    if (this._cleanupTimer) {
+      clearInterval(this._cleanupTimer);
+      this._cleanupTimer = null;
+    }
   }
 
   async hashPassword(password) {
