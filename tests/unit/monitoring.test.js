@@ -110,15 +110,53 @@ describe('MonitoringSystem', () => {
     expect(monitoring.getTraceInfo('missing')).toBeUndefined();
 
     const empty = new MonitoringSystem();
-    expect(empty.getPerformanceStats()).toEqual(expect.objectContaining({
-      totalRequests: 0,
-      p95ResponseTime: '0ms',
-      p99ResponseTime: '0ms'
-    }));
     expect(empty.exportMetrics('json')).toEqual(expect.objectContaining({
       metrics: [],
       performanceData: []
     }));
     expect(empty.exportPrometheus()).toBe('');
+  });
+
+  it('returns safe zeroed stats for empty monitoring periods', () => {
+    const monitoring = new MonitoringSystem();
+    const expectedEmptyStats = {
+      dataPoints: 0,
+      avgResponseTime: '0.00ms',
+      p95ResponseTime: 0,
+      p99ResponseTime: 0,
+      minResponseTime: 0,
+      maxResponseTime: 0,
+      errorRate: '0.00%',
+      requestsPerSecond: '0.00',
+      totalRequests: 0
+    };
+
+    for (const period of ['minute', 'hour', 'day']) {
+      expect(monitoring.getPerformanceStats(period)).toEqual({
+        period,
+        ...expectedEmptyStats
+      });
+    }
+  });
+
+  it('keeps health and reports finite before traffic is recorded', () => {
+    const monitoring = new MonitoringSystem();
+    const health = monitoring.getHealthStatus();
+    const report = monitoring.generateReport();
+
+    expect(JSON.stringify(health)).not.toMatch(/NaN|Infinity|-Infinity/);
+    expect(JSON.stringify(report)).not.toMatch(/NaN|Infinity|-Infinity/);
+    expect(health.performance).toEqual(expect.objectContaining({
+      avgResponseTime: '0.00ms',
+      errorRate: '0.00%',
+      minResponseTime: 0,
+      maxResponseTime: 0
+    }));
+    expect(report.performance).toEqual(expect.objectContaining({
+      avgResponseTime: '0.00ms',
+      errorRate: '0.00%',
+      minResponseTime: 0,
+      maxResponseTime: 0
+    }));
   });
 });
