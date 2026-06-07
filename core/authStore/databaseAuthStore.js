@@ -402,7 +402,7 @@ class DatabaseAuthStore {
   // ─── Cleanup ──────────────────────────────────────────────────────────────
 
   /**
-   * Delete expired rows from auth_tokens and auth_sessions.
+   * Delete expired, used, or revoked rows from auth_tokens and auth_sessions.
    * Call on-demand — this store never starts background timers.
    * @returns {{ removed: number }}
    */
@@ -410,11 +410,18 @@ class DatabaseAuthStore {
     const now = this._now();
 
     const tokenCount = await this.knex('auth_tokens')
-      .where('expires_at', '<', now)
+      .where(function() {
+        this.where('expires_at', '<', now)
+            .orWhereNotNull('used_at')
+            .orWhereNotNull('revoked_at');
+      })
       .delete();
 
     const sessionCount = await this.knex('auth_sessions')
-      .where('expires_at', '<', now)
+      .where(function() {
+        this.where('expires_at', '<', now)
+            .orWhereNotNull('revoked_at');
+      })
       .delete();
 
     return { removed: (tokenCount || 0) + (sessionCount || 0) };

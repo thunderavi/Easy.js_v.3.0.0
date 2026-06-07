@@ -40,28 +40,70 @@ function buildMockKnex() {
     let countField = null;
 
     function _match(row) {
-      for (const [k, v] of Object.entries(_wheres)) {
-        if (row[k] !== v) return false;
+      // If we have an OR group, the row must match at least one of the OR conditions
+      if (_orGroups && _orGroups.length > 0) {
+        let matchedAnyGroup = false;
+        for (const group of _orGroups) {
+          // Inside a group, we check if ANY of the internal conditions match (since they are chained with ORs)
+          let groupMatch = false;
+          
+          for (const { field, op, value } of group.comparisons) {
+             const rowVal = new Date(row[field]).getTime();
+             const cmpVal = new Date(value).getTime();
+             if (op === '>'  && (rowVal >  cmpVal)) groupMatch = true;
+             if (op === '<'  && (rowVal <  cmpVal)) groupMatch = true;
+             if (op === '>=' && (rowVal >= cmpVal)) groupMatch = true;
+             if (op === '<=' && (rowVal <= cmpVal)) groupMatch = true;
+          }
+          for (const f of group.whereNotNulls) {
+             if (row[f] !== null && row[f] !== undefined) groupMatch = true;
+          }
+          
+          if (groupMatch) {
+            matchedAnyGroup = true;
+            break;
+          }
+        }
+        if (!matchedAnyGroup) return false;
+      } else {
+        // Normal AND matching
+        for (const [k, v] of Object.entries(_wheres)) {
+          if (row[k] !== v) return false;
+        }
+        for (const f of _whereNulls) {
+          if (row[f] !== null && row[f] !== undefined) return false;
+        }
+        for (const f of _whereNotNulls) {
+          if (row[f] === null || row[f] === undefined) return false;
+        }
+        for (const { field, op, value } of _comparisons) {
+          const rowVal = new Date(row[field]).getTime();
+          const cmpVal = new Date(value).getTime();
+          if (op === '>'  && !(rowVal >  cmpVal)) return false;
+          if (op === '<'  && !(rowVal <  cmpVal)) return false;
+          if (op === '>=' && !(rowVal >= cmpVal)) return false;
+          if (op === '<=' && !(rowVal <= cmpVal)) return false;
+        }
       }
-      for (const f of _whereNulls) {
-        if (row[f] !== null && row[f] !== undefined) return false;
-      }
-      for (const f of _whereNotNulls) {
-        if (row[f] === null || row[f] === undefined) return false;
-      }
-      for (const { field, op, value } of _comparisons) {
-        const rowVal = new Date(row[field]).getTime();
-        const cmpVal = new Date(value).getTime();
-        if (op === '>'  && !(rowVal >  cmpVal)) return false;
-        if (op === '<'  && !(rowVal <  cmpVal)) return false;
-        if (op === '>=' && !(rowVal >= cmpVal)) return false;
-        if (op === '<=' && !(rowVal <= cmpVal)) return false;
-      }
+      
       return true;
     }
 
+    const _orGroups = [];
+
     const builder = {
       where(fieldOrObj, opOrVal, val) {
+        if (typeof fieldOrObj === 'function') {
+           // It's a grouped query (function). We'll build a sub-group.
+           const group = { comparisons: [], whereNotNulls: [] };
+           const subBuilder = {
+             where(f, o, v) { group.comparisons.push({ field: f, op: o, value: v }); return subBuilder; },
+             orWhereNotNull(f) { group.whereNotNulls.push(f); return subBuilder; }
+           };
+           fieldOrObj.call(subBuilder);
+           _orGroups.push(group);
+           return builder;
+        }
         if (arguments.length === 3) {
           // Three-arg form: where(field, op, value)
           _comparisons.push({ field: fieldOrObj, op: opOrVal, value: val });
@@ -74,6 +116,7 @@ function buildMockKnex() {
       },
       whereNull(field) { _whereNulls.push(field); return builder; },
       whereNotNull(field) { _whereNotNulls.push(field); return builder; },
+      orWhereNotNull(field) { _whereNotNulls.push(field); return builder; },
 
       count(expr) {
         isCount = true;
@@ -340,17 +383,38 @@ describe('DatabaseAuthStore', () => {
   // ── cleanupExpired ────────────────────────────────────────────────────────
 
   describe('cleanupExpired', () => {
-    it('removes only expired rows from auth_tokens and auth_sessions', async () => {
-      await store.saveRefreshToken('r-good', 'u1', future());
-      await store.saveRefreshToken('r-bad', 'u2', past());
-      await store.saveSession('s-good', 'u1', {}, future());
-      await store.saveSession('s-bad', 'u2', {}, past());
+    it('removes expired, used, and revoked tokens, and expired and revoked sessions', async () => {
+      // 1. Active rows (should remain)
+      await store.saveRefreshToken('r-active', 'u1', future());
+      await store.saveSession('s-active', 'u1', {}, future());
+
+      // 2. Expired rows (should be removed)
+      await store.saveRefreshToken('r-exp', 'u2', past());
+      await store.saveSession('s-exp', 'u2', {}, past());
+
+      // 3. Used rows (should be removed)
+      await store.savePasswordResetToken('r-used', 'u3', future());
+      await store.deletePasswordResetToken('r-used'); // sets used_at
+
+      // 4. Revoked rows (should be removed)
+      await store.saveRefreshToken('r-rev', 'u4', future());
+      await store.revokeRefreshToken('r-rev'); // sets revoked_at
+      
+      await store.saveSession('s-rev', 'u4', {}, future());
+      await store.revokeSession('s-rev'); // sets revoked_at
 
       const { removed } = await store.cleanupExpired();
-      expect(removed).toBe(2); // one token, one session
+      
+      // Removed count: 1 expired token + 1 expired session + 1 used token + 1 revoked token + 1 revoked session = 5
+      expect(removed).toBe(5);
 
-      expect(await store.getRefreshToken('r-good')).not.toBeNull();
-      expect(await store.getSession('s-good')).not.toBeNull();
+      // Verify active ones are intact
+      expect(await store.getRefreshToken('r-active')).not.toBeNull();
+      expect(await store.getSession('s-active')).not.toBeNull();
+
+      // Verify others are removed from underlying tables
+      expect(knex._tables['auth_sessions'].length).toBe(1); // only s-active
+      expect(knex._tables['auth_tokens'].length).toBe(1); // only r-active
     });
   });
 
