@@ -58,7 +58,8 @@ class EnterpriseAuth {
   }
 
   /**
-   * Generate authorization URL for OAuth2 (PKCE flow per RFC 7636)
+   * Generate authorization URL for OAuth2 (PKCE flow per RFC 7636).
+   * Uses URLSearchParams to properly encode query parameter values.
    */
   getOAuth2AuthUrl(provider) {
     const providerConfig = this.oauth2Providers.get(provider);
@@ -67,8 +68,17 @@ class EnterpriseAuth {
     const state = crypto.randomBytes(32).toString('hex');
     const { codeVerifier, codeChallenge } = this.generatePKCEPair();
 
+    const params = new URLSearchParams({
+      client_id: providerConfig.clientId,
+      redirect_uri: providerConfig.redirectUri,
+      scope: providerConfig.scopes.join(' '),
+      state,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256'
+    });
+
     return {
-      url: `${providerConfig.authorizationUrl}?client_id=${providerConfig.clientId}&redirect_uri=${providerConfig.redirectUri}&scope=${providerConfig.scopes.join(' ')}&state=${state}&code_challenge=${codeChallenge}&code_challenge_method=S256`,
+      url: `${providerConfig.authorizationUrl}?${params.toString()}`,
       state,
       codeChallenge,
       codeVerifier
@@ -77,7 +87,7 @@ class EnterpriseAuth {
 
   /**
    * Generate PKCE code_verifier + code_challenge pair per RFC 7636.
-   * code_verifier: 43–128 unreserved characters (base64url, no padding).
+   * code_verifier: 43 characters — 32 random bytes encoded as base64url (no padding).
    * code_challenge: BASE64URL(SHA256(code_verifier)).
    * Returns { codeVerifier, codeChallenge }.
    */

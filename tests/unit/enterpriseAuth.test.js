@@ -35,13 +35,14 @@ describe('EnterpriseAuth', () => {
     });
 
     const authUrl = auth.getOAuth2AuthUrl('github');
+    const parsedUrl = new URL(authUrl.url);
 
-    expect(authUrl.url).toContain('client_id=client');
-    expect(authUrl.url).toContain('scope=openid email');
+    expect(parsedUrl.searchParams.get('client_id')).toBe('client');
+    expect(parsedUrl.searchParams.get('scope')).toBe('openid email');
     expect(authUrl.state).toHaveLength(64);
     expect(authUrl.codeChallenge).toHaveLength(43);
     expect(authUrl.codeVerifier).toBeDefined();
-    expect(authUrl.url).toContain('code_challenge_method=S256');
+    expect(parsedUrl.searchParams.get('code_challenge_method')).toBe('S256');
     expect(() => auth.getOAuth2AuthUrl('missing')).toThrow('not configured');
   });
 
@@ -79,10 +80,11 @@ describe('EnterpriseAuth', () => {
     });
 
     const authUrl = auth.getOAuth2AuthUrl('google');
+    const parsedUrl = new URL(authUrl.url);
 
     // URL must contain both required PKCE params
-    expect(authUrl.url).toContain('code_challenge_method=S256');
-    expect(authUrl.url).toContain('code_challenge=');
+    expect(parsedUrl.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(parsedUrl.searchParams.get('code_challenge')).toBeTruthy();
 
     // returned verifier must produce the returned challenge
     const expectedChallenge = require('crypto')
