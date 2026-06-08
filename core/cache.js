@@ -127,6 +127,14 @@ class CacheEngine {
 
     // Try memory cache
     if (this.memoryCache.has(key)) {
+      const metadata = this.keyMetadata.get(key);
+
+      if (this.isExpired(metadata)) {
+        this.deleteMemoryEntry(key);
+        this.updateMetrics('misses');
+        return null;
+      }
+
       this.updateMetrics('hits');
       return this.memoryCache.get(key);
     }
@@ -143,7 +151,7 @@ class CacheEngine {
     const cacheTime = ttl || this.config.ttl;
 
     // Store in memory
-    this.trackMemoryEntry(key, namespace, data);
+    this.trackMemoryEntry(key, namespace, data, cacheTime);
     this.memoryCache.set(key, data);
     this.evictIfNeeded();
 
@@ -235,14 +243,19 @@ class CacheEngine {
   /**
    * Update memory usage tracking
    */
-  trackMemoryEntry(key, namespace, data) {
+  trackMemoryEntry(key, namespace, data, ttl) {
     const oldMetadata = this.keyMetadata.get(key);
     if (oldMetadata) {
       this.memoryCacheSize -= oldMetadata.sizeMb;
     }
 
     const size = Buffer.byteLength(JSON.stringify(data), 'utf8') / (1024 * 1024); // MB
-    this.keyMetadata.set(key, { namespace, sizeMb: size });
+
+    const expiresAt = ttl
+      ? Date.now() + ttl * 1000
+      : null;
+
+    this.keyMetadata.set(key, { namespace, sizeMb: size, expiresAt });
     this.memoryCacheSize += size;
 
     if (this.memoryCache.size > 1000) {
@@ -250,6 +263,10 @@ class CacheEngine {
       const firstKey = this.memoryCache.keys().next().value;
       this.deleteMemoryEntry(firstKey);
     }
+  }
+
+  isExpired(metadata) {
+    return metadata?.expiresAt && Date.now() > metadata.expiresAt;
   }
 
   deleteMemoryEntry(key) {
