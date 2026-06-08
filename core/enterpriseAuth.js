@@ -37,6 +37,11 @@ class EnterpriseAuth {
     // Pluggable auth store — defaults to MemoryAuthStore for dev/tests.
     // Pass config.store = new DatabaseAuthStore({ knex }) for production.
     this.store = config.store || createAuthStore(config);
+    this.fetchFn = config.fetch || globalThis.fetch;
+
+    if (!this.fetchFn) {
+      throw new Error('Fetch implementation unavailable');
+    }
 
     this.maxLoginAttempts = 5;
     this.lockoutDuration = 15 * 60 * 1000; // 15 minutes
@@ -110,11 +115,8 @@ class EnterpriseAuth {
    * Returns { codeVerifier, codeChallenge }.
    */
   generatePKCEPair() {
-    const verifier = crypto.randomBytes(32)
-      .toString('base64url');
-    const challenge = crypto.createHash('sha256')
-      .update(verifier)
-      .digest('base64url');
+    const verifier = crypto.randomBytes(32).toString('base64url');
+    const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
     return { codeVerifier: verifier, codeChallenge: challenge };
   }
 
@@ -123,8 +125,12 @@ class EnterpriseAuth {
    */
   async exchangeOAuth2Code(provider, code, codeVerifier, state, redirectUri) {
     const providerConfig = this.oauth2Providers.get(provider);
-    if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
+    if (!providerConfig) {
+      throw new Error(`Provider ${provider} not configured`);
+    }
+
+    // Validate stored OAuth state
     const storedState = await this.store.getOAuthState(state);
 
     if (!storedState) {
@@ -139,24 +145,55 @@ class EnterpriseAuth {
       throw new Error('Redirect URI mismatch');
     }
 
-    const expectedChallenge = crypto
-      .createHash('sha256')
-      .update(codeVerifier)
-      .digest('base64url');
+    // PKCE verification (RFC 7636)
+    const expectedChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
 
     if (storedState.codeChallenge !== expectedChallenge) {
       throw new Error('PKCE verification failed');
     }
 
+    // Consume state (prevent replay attacks)
     await this.store.deleteOAuthState(state);
 
-    // Mock response for demonstration
-    return {
-      access_token: 'oauth2_token_' + crypto.randomBytes(32).toString('hex'),
-      token_type: 'Bearer',
-      expires_in: 3600,
-      refresh_token: 'refresh_token_' + crypto.randomBytes(32).toString('hex'),
+    // Real OAuth token exchange
+    const payload = {
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri || providerConfig.redirectUri,
+      client_id: providerConfig.clientId,
     };
+
+    if (providerConfig.clientSecret) {
+      payload.client_secret = providerConfig.clientSecret;
+    }
+
+    if (codeVerifier) {
+      payload.code_verifier = codeVerifier;
+    }
+
+    try {
+      const response = await this.fetchFn(providerConfig.tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'OAuth token exchange failed');
+      }
+
+      if (data.error) {
+        throw new Error(`OAuth provider error: ${data.error}`);
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(`OAuth token exchange failed: ${error.message}`);
+    }
   }
 
   /**
