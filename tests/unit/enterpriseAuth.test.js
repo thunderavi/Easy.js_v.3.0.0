@@ -39,8 +39,57 @@ describe('EnterpriseAuth', () => {
     expect(authUrl.url).toContain('client_id=client');
     expect(authUrl.url).toContain('scope=openid email');
     expect(authUrl.state).toHaveLength(64);
-    expect(authUrl.codeChallenge).toHaveLength(64);
+    expect(authUrl.codeChallenge).toHaveLength(43);
+    expect(authUrl.codeVerifier).toBeDefined();
+    expect(authUrl.url).toContain('code_challenge_method=S256');
     expect(() => auth.getOAuth2AuthUrl('missing')).toThrow('not configured');
+  });
+
+  it('generates PKCE verifier/challenge pair compliant with RFC 7636', () => {
+    const auth = new EnterpriseAuth();
+    const pair = auth.generatePKCEPair();
+
+    // code_verifier: 43–128 unreserved base64url characters (no padding)
+    expect(pair.codeVerifier.length).toBeGreaterThanOrEqual(43);
+    expect(pair.codeVerifier.length).toBeLessThanOrEqual(128);
+    expect(pair.codeVerifier).toMatch(/^[A-Za-z0-9\-._~]+$/);
+
+    // code_challenge: exactly 43 base64url characters (SHA-256 → 32 bytes → base64url)
+    expect(pair.codeChallenge).toHaveLength(43);
+    expect(pair.codeChallenge).toMatch(/^[A-Za-z0-9\-._~]+$/);
+
+    // Derive expected challenge and verify binding
+    const expectedChallenge = require('crypto')
+      .createHash('sha256')
+      .update(pair.codeVerifier)
+      .digest('base64url');
+    expect(pair.codeChallenge).toBe(expectedChallenge);
+  });
+
+  it('includes correct PKCE params in the authorization URL', () => {
+    const auth = new EnterpriseAuth();
+    auth.registerOAuth2Provider('google', {
+      clientId: 'cid',
+      clientSecret: 'cs',
+      authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+      tokenUrl: 'https://oauth2.googleapis.com/token',
+      userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
+      redirectUri: 'https://app.example/callback',
+      scopes: ['openid', 'email', 'profile']
+    });
+
+    const authUrl = auth.getOAuth2AuthUrl('google');
+
+    // URL must contain both required PKCE params
+    expect(authUrl.url).toContain('code_challenge_method=S256');
+    expect(authUrl.url).toContain('code_challenge=');
+
+    // returned verifier must produce the returned challenge
+    const expectedChallenge = require('crypto')
+      .createHash('sha256')
+      .update(authUrl.codeVerifier)
+      .digest('base64url');
+    expect(authUrl.codeChallenge).toBe(expectedChallenge);
   });
 
   it('generates MFA secrets, verifies TOTP, and consumes backup codes once', async () => {

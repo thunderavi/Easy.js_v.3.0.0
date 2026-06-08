@@ -58,27 +58,36 @@ class EnterpriseAuth {
   }
 
   /**
-   * Generate authorization URL for OAuth2
+   * Generate authorization URL for OAuth2 (PKCE flow per RFC 7636)
    */
   getOAuth2AuthUrl(provider) {
     const providerConfig = this.oauth2Providers.get(provider);
     if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
     const state = crypto.randomBytes(32).toString('hex');
-    const codeChallenge = this.generateCodeChallenge();
+    const { codeVerifier, codeChallenge } = this.generatePKCEPair();
 
     return {
-      url: `${providerConfig.authorizationUrl}?client_id=${providerConfig.clientId}&redirect_uri=${providerConfig.redirectUri}&scope=${providerConfig.scopes.join(' ')}&state=${state}&code_challenge=${codeChallenge}`,
+      url: `${providerConfig.authorizationUrl}?client_id=${providerConfig.clientId}&redirect_uri=${providerConfig.redirectUri}&scope=${providerConfig.scopes.join(' ')}&state=${state}&code_challenge=${codeChallenge}&code_challenge_method=S256`,
       state,
-      codeChallenge
+      codeChallenge,
+      codeVerifier
     };
   }
 
   /**
-   * Generate PKCE code challenge
+   * Generate PKCE code_verifier + code_challenge pair per RFC 7636.
+   * code_verifier: 43–128 unreserved characters (base64url, no padding).
+   * code_challenge: BASE64URL(SHA256(code_verifier)).
+   * Returns { codeVerifier, codeChallenge }.
    */
-  generateCodeChallenge() {
-    return crypto.randomBytes(32).toString('hex');
+  generatePKCEPair() {
+    const verifier = crypto.randomBytes(32)
+      .toString('base64url');
+    const challenge = crypto.createHash('sha256')
+      .update(verifier)
+      .digest('base64url');
+    return { codeVerifier: verifier, codeChallenge: challenge };
   }
 
   /**
