@@ -60,12 +60,26 @@ class EnterpriseAuth {
   /**
    * Generate authorization URL for OAuth2
    */
-  getOAuth2AuthUrl(provider) {
+  async getOAuth2AuthUrl(provider) {
     const providerConfig = this.oauth2Providers.get(provider);
     if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
     const state = crypto.randomBytes(32).toString('hex');
     const codeChallenge = this.generateCodeChallenge();
+
+    // The expiry time for the state to prevent it from sitting around forever (e.g., 10 minutes)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); 
+
+    // Build the state metadata payload
+    const stateData = {
+      provider,
+      redirectUri: providerConfig.redirectUri,
+      codeChallenge,
+      createdAt: Date.now()
+    };
+
+    // Save it to the auth store
+    await this.store.saveOAuthState(state, stateData, expiresAt);
 
     return {
       url: `${providerConfig.authorizationUrl}?client_id=${providerConfig.clientId}&redirect_uri=${providerConfig.redirectUri}&scope=${providerConfig.scopes.join(' ')}&state=${state}&code_challenge=${codeChallenge}`,
@@ -84,9 +98,25 @@ class EnterpriseAuth {
   /**
    * Exchange OAuth2 code for token
    */
-  async exchangeOAuth2Code(provider, code, codeVerifier) {
+  async exchangeOAuth2Code(provider, code, codeVerifier, state) {
     const providerConfig = this.oauth2Providers.get(provider);
     if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
+
+    // 1. Fetch the state from the store
+    const storedState = await this.store.getOAuthState(state);
+
+    // 2. Validate existence and expiry
+    if (!storedState) {
+      throw new Error('Invalid, missing, or expired OAuth state');
+    }
+
+    // 3. Validate provider mismatch (prevents cross-provider state spoofing)
+    if (storedState.provider !== provider) {
+      throw new Error('OAuth state provider mismatch');
+    }
+
+    // 4. Consume the state immediately to prevent replay attacks
+    await this.store.deleteOAuthState(state);
 
     // This would make actual HTTP request to token endpoint
     // Returning mock response for demonstration

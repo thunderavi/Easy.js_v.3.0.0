@@ -22,7 +22,7 @@ describe('EnterpriseAuth', () => {
     expect(databaseAuth.store.knex).toBe(knex);
   });
 
-  it('registers OAuth2 providers and generates authorization data', () => {
+  it('registers OAuth2 providers and generates authorization data', async () => {
     const auth = new EnterpriseAuth();
     auth.registerOAuth2Provider('github', {
       clientId: 'client',
@@ -34,13 +34,16 @@ describe('EnterpriseAuth', () => {
       scopes: ['openid', 'email']
     });
 
-    const authUrl = auth.getOAuth2AuthUrl('github');
+    // Make sure we await this now!
+    const authUrl = await auth.getOAuth2AuthUrl('github');
 
     expect(authUrl.url).toContain('client_id=client');
     expect(authUrl.url).toContain('scope=openid email');
     expect(authUrl.state).toHaveLength(64);
     expect(authUrl.codeChallenge).toHaveLength(64);
-    expect(() => auth.getOAuth2AuthUrl('missing')).toThrow('not configured');
+    
+    // Test the error for missing providers using async rejection
+    await expect(auth.getOAuth2AuthUrl('missing')).rejects.toThrow('not configured');
   });
 
   it('generates MFA secrets, verifies TOTP, and consumes backup codes once', async () => {
@@ -145,5 +148,50 @@ describe('EnterpriseAuth', () => {
       activeSessions: 0,
       oauth2Providers: 0
     }));
+  });
+  it('validates OAuth state, prevents replays, and rejects mismatched/expired state', async () => {
+    const auth = new EnterpriseAuth();
+    auth.registerOAuth2Provider('google', {
+      clientId: 'client',
+      clientSecret: 'secret',
+      authorizationUrl: 'https://auth.example/authorize',
+      tokenUrl: 'https://auth.example/token',
+      userInfoUrl: 'https://auth.example/user',
+      redirectUri: 'https://app.example/callback',
+      scopes: ['openid']
+    });
+
+    // Generate valid state
+    const authUrl = await auth.getOAuth2AuthUrl('google');
+    const validState = authUrl.state;
+
+    // 1. Valid State Verification & Replay Prevention
+    // The first exchange should succeed
+    const successResponse = await auth.exchangeOAuth2Code('google', 'mock-code', 'mock-verifier', validState);
+    expect(successResponse).toHaveProperty('access_token');
+    
+    // The second exchange with the exact same state MUST fail (consumed/replay attack)
+    await expect(auth.exchangeOAuth2Code('google', 'mock-code', 'mock-verifier', validState))
+      .rejects.toThrow('Invalid, missing, or expired OAuth state');
+
+    // 2. Missing State Verification
+    await expect(auth.exchangeOAuth2Code('google', 'mock-code', 'mock-verifier', 'non-existent-state'))
+      .rejects.toThrow('Invalid, missing, or expired OAuth state');
+
+    // 3. Provider Mismatch Verification
+    auth.registerOAuth2Provider('github', { redirectUri: '...', scopes: [] });
+    const githubUrl = await auth.getOAuth2AuthUrl('github');
+    
+    // Try to use a valid github state on the google provider
+    await expect(auth.exchangeOAuth2Code('google', 'mock-code', 'mock-verifier', githubUrl.state))
+      .rejects.toThrow('OAuth state provider mismatch');
+
+    // 4. Expired State Verification
+    const expiredState = 'expired-state-hash';
+    // Manually force an expired state directly into the store to simulate a timeout
+    await auth.store.saveOAuthState(expiredState, { provider: 'google' }, new Date(Date.now() - 1000));
+    
+    await expect(auth.exchangeOAuth2Code('google', 'mock-code', 'mock-verifier', expiredState))
+      .rejects.toThrow('Invalid, missing, or expired OAuth state');
   });
 });
