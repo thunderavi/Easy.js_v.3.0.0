@@ -166,6 +166,7 @@ describe('validateJwtSecret – KNOWN_DEFAULTS set', () => {
     expect(KNOWN_DEFAULTS.has('easy-js-secret-key-change-in-production')).toBe(true);
     expect(KNOWN_DEFAULTS.has('dev-secret')).toBe(true);
     expect(KNOWN_DEFAULTS.has('dev-refresh')).toBe(true);
+    expect(KNOWN_DEFAULTS.has('easyjs-default-secret')).toBe(true);  // Issue #67
   });
 });
 
@@ -176,6 +177,14 @@ describe('validateJwtSecret – placeholder pattern detection (production)', () 
       expect(() =>
         validateJwtSecret('your-refresh-secret-here-change-in-production', 'REFRESH_TOKEN_SECRET')
       ).toThrow(/known insecure default/);
+    });
+  });
+
+  it('throws for the original hardcoded fallback "easyjs-default-secret" (Issue #67)', () => {
+    withNodeEnv('production', () => {
+      expect(() => validateJwtSecret('easyjs-default-secret', 'JWT_SECRET')).toThrow(
+        /known insecure default/
+      );
     });
   });
 

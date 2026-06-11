@@ -23,9 +23,16 @@ const MIN_SECRET_LENGTH = 32;
 
 /**
  * Known insecure default values that must never be used in production.
- * Extend this list as new defaults are introduced.
+ *
+ * FIX (Issue #67): Added 'easyjs-default-secret' — the original hardcoded
+ * fallback that was present in the codebase before this fix. Without this
+ * entry, a developer who accidentally commits that value could silently
+ * deploy a production app whose tokens can be forged by anyone.
  */
 const KNOWN_DEFAULTS = new Set([
+  // Added for Issue #67
+  'easyjs-default-secret', // the original hardcoded || fallback
+  // Pre-existing entries
   'easy-js-secret-key-change-in-production',
   'dev-secret',
   'dev-refresh',
