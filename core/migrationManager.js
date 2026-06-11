@@ -134,6 +134,52 @@ exports.seed = async (knex) => {
     }
   }
 
+  async generateSeedsFromConfig(seeds) {
+    try {
+      const seedsDir = path.join(__dirname, '../seeds');
+      if (!fs.existsSync(seedsDir)) {
+        fs.mkdirSync(seedsDir, { recursive: true });
+      }
+
+      for (const seed of seeds) {
+        const { model, records } = seed;
+        const filename = `seed_${model}.js`;
+        const filepath = path.join(seedsDir, filename);
+
+        const code = this.buildSafeSeedCode(model, records);
+        fs.writeFileSync(filepath, code);
+        Logger.success(`✓ DSL Seed file written: ${filename}`);
+      }
+    } catch (error) {
+      Logger.error(`Failed to generate seeds from config: ${error.message}`);
+      throw error;
+    }
+  }
+
+  buildSafeSeedCode(model, records) {
+    const recordsStr = JSON.stringify(records, null, 2);
+    return `exports.seed = async (knex) => {
+  const records = ${recordsStr};
+
+  for (const record of records) {
+    let matchObj = {};
+    if (record.email !== undefined && record.email !== null) {
+      matchObj = { email: record.email };
+    } else if (record.id !== undefined && record.id !== null) {
+      matchObj = { id: record.id };
+    } else {
+      matchObj = record;
+    }
+
+    const existing = await knex('${model}').where(matchObj).first();
+    if (!existing) {
+      await knex('${model}').insert(record);
+    }
+  }
+};
+`;
+  }
+
   async getMigrationStatus() {
     try {
       const completed = await this.knex.migrate.list();

@@ -18,6 +18,7 @@ class ASTBuilder {
       admin: false,
       roles: [],
       jobs: [],
+      seeds: [],
     };
   }
 
@@ -39,6 +40,7 @@ class ASTBuilder {
     this.parseSecurityFromContent(normalized);
     this.parseRolesFromContent(normalized);
     this.parseJobsFromContent(normalized);
+    this.parseSeedsFromContent(normalized);
 
     return this.ast;
   }
@@ -191,6 +193,29 @@ class ASTBuilder {
     }
   }
 
+parseSeedsFromContent(content) {
+  const seedRegex = /\bSEED\s+(\w+)\s+WITH\s*(\[[\s\S]*?\])/gi;
+  let match;
+  while ((match = seedRegex.exec(content)) !== null) {
+    const model = match[1];
+    const records = this.parseRecordArray(match[2]);
+    this.ast.seeds.push({ model, records });
+  }
+}
+
+parseRecordArray(raw) {
+  const jsonish = raw
+    .replace(/'([^']*)'/g, '"$1"')
+    .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
+    .replace(/,(\s*[}\]])/g, '$1');
+
+  try {
+    return JSON.parse(jsonish);
+  } catch (err) {
+    throw new Error(`Invalid SEED data block: ${err.message}`);
+  }
+}
+
   build(tokens) {
     this.reset();
     let i = 0;
@@ -223,6 +248,18 @@ class ASTBuilder {
         i = this.findNextStatement(tokens, i);
       } else if (token.type === 'VALIDATE') {
         this.ast.validations.push(this.parseValidate(tokens, i));
+        i = this.findNextStatement(tokens, i);
+      } else if (token.type === 'SEED') {
+        const modelToken = tokens[i + 1];
+        const withToken = tokens[i + 2];
+        const blockToken = tokens[i + 3];
+
+        if (!modelToken || modelToken.type !== 'IDENTIFIER' || !withToken || withToken.type !== 'WITH' || !blockToken || blockToken.type !== 'BLOCK') {
+          throw new Error('SEED requires model name, WITH keyword, and a records block');
+        }
+
+        const records = this.parseRecordArray(blockToken.value);
+        this.ast.seeds.push({ model: modelToken.value, records });
         i = this.findNextStatement(tokens, i);
       } else {
         i++;

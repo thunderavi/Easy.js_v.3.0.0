@@ -56,6 +56,12 @@ class EasyJS {
       const config = this.compiler.compile(ast);
       Logger.success('Compilation completed');
 
+      if (config.seeds && config.seeds.length > 0) {
+        Logger.info('Generating seeds from DSL...');
+        const migrationManager = new MigrationManager(config);
+        await migrationManager.generateSeedsFromConfig(config.seeds);
+      }
+
       Logger.info('Starting runtime engine...');
       await this.runtime.initialize(config);
       Logger.success('Server running');

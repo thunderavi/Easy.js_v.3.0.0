@@ -625,13 +625,44 @@ class CLI {
   }
 
   runSeedCommand() {
-    const subcommand = this.args[0] || 'run';
-    const name = this.args[1] || 'seed';
-    const commands = {
-      run: 'npm run seed:run',
-      make: `npm run seed:create -- ${name}`
-    };
-    this.runShell(commands[subcommand] || commands.run);
+    const arg0 = this.args[0];
+
+    // If no argument or 'run', run all seeds
+    if (!arg0 || arg0 === 'run') {
+      this.runShell('npm run seed:run');
+      return;
+    }
+
+    // If 'make', create seed
+    if (arg0 === 'make') {
+      const name = this.args[1] || 'seed';
+      this.runShell(`npm run seed:create -- ${name}`);
+      return;
+    }
+
+    // Otherwise, check for a matching seed file to run specifically
+    try {
+      const seedsDir = path.join(process.cwd(), 'seeds');
+      if (fs.existsSync(seedsDir)) {
+        const files = fs.readdirSync(seedsDir);
+        const match = files.find(file =>
+          file.toLowerCase() === `${arg0.toLowerCase()}.js` ||
+          file.toLowerCase() === `seed_${arg0.toLowerCase()}.js` ||
+          file.toLowerCase().includes(arg0.toLowerCase())
+        );
+
+        if (match) {
+          Logger.info(`Running specific seed file: ${match}`);
+          this.runShell(`npx knex seed:run --specific=${match}`);
+          return;
+        }
+      }
+    } catch (err) {
+      Logger.warn(`Failed to read seeds directory: ${err.message}`);
+    }
+
+    // Fallback if no specific match is found
+    this.runShell('npm run seed:run');
   }
 
   showVersion() {
