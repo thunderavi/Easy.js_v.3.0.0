@@ -217,7 +217,7 @@ parseSeedsFromContent(content) {
     if (endIndex === -1) {
       throw new Error('Unmatched [ in SEED block');
     }
-    const rawBlock = content.slice(startIndex, endIndex + 1).trim();
+    const rawBlock = content.slice(startIndex - 1, endIndex + 1).trim();
     const records = this.parseRecordArray(rawBlock);
     this.ast.seeds.push({ model, records });
   }
