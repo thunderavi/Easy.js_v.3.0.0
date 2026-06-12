@@ -13,7 +13,8 @@ class Compiler {
       docs: false,
       admin: false,
       roles: [],
-      jobs: []
+      jobs: [],
+      aliases: []
     };
   }
 
@@ -31,8 +32,26 @@ class Compiler {
     this.config.admin = ast.admin;
     this.config.roles = ast.roles || [];
     this.config.jobs = ast.jobs || [];
+    this.config.aliases = this.compileAliases(ast.aliases || [], this.config.routes);
 
     return this.config;
+  }
+
+  compileAliases(aliases, routes) {
+    return aliases.map(alias => {
+      const original = routes.find(r => r.path === alias.from);
+      if (!original) {
+        console.warn('[easy.js] ALIAS warning: no route found for ' + alias.from);
+        return null;
+      }
+      return {
+        method: original.method,
+        path: alias.to,
+        model: original.model,
+        handler: original.handler,
+        aliasOf: alias.from
+      };
+    }).filter(Boolean);
   }
 
   compileModels(models) {

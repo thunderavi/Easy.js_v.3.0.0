@@ -18,6 +18,7 @@ class ASTBuilder {
       admin: false,
       roles: [],
       jobs: [],
+      aliases: [],
     };
   }
 
@@ -39,6 +40,7 @@ class ASTBuilder {
     this.parseSecurityFromContent(normalized);
     this.parseRolesFromContent(normalized);
     this.parseJobsFromContent(normalized);
+      this.parseAliasFromContent(normalized);
 
     return this.ast;
   }
@@ -179,6 +181,14 @@ class ASTBuilder {
     }
   }
 
+  parseAliasFromContent(content) {
+    const aliasRegex = /^\s*ALIAS\s+(\/\S*)\s+AS\s+(\/\S*)/gim;
+    let match;
+    while ((match = aliasRegex.exec(content)) !== null) {
+      this.ast.aliases.push({ from: match[1], to: match[2] });
+    }
+  }
+
   parseJobsFromContent(content) {
     const jobRegex = /\bJOB\s+(\w+)(?:\s+EVERY\s+(\S+))?\s*\{([\s\S]*?)\}/gi;
     let match;
@@ -221,7 +231,10 @@ class ASTBuilder {
       } else if (token.type === 'PROTECT') {
         this.ast.protections.push(this.parseProtect(tokens, i));
         i = this.findNextStatement(tokens, i);
-      } else if (token.type === 'VALIDATE') {
+      } else if (token.type === 'ALIAS') {
+          this.ast.aliases.push(this.parseAlias(tokens, i));
+          i = this.findNextStatement(tokens, i);
+        } else if (token.type === 'VALIDATE') {
         this.ast.validations.push(this.parseValidate(tokens, i));
         i = this.findNextStatement(tokens, i);
       } else {
@@ -374,6 +387,22 @@ class ASTBuilder {
     return {
       path: pathToken.value,
     };
+  }
+
+  parseAlias(tokens, start) {
+    const fromToken = tokens[start + 1];
+    if (!fromToken || fromToken.type !== 'PATH') {
+      throw new Error('ALIAS requires a valid source path');
+    }
+    const asToken = tokens[start + 2];
+    if (!asToken || asToken.type !== 'AS') {
+      throw new Error('ALIAS requires AS keyword');
+    }
+    const toToken = tokens[start + 3];
+    if (!toToken || toToken.type !== 'PATH') {
+      throw new Error('ALIAS requires a valid target path');
+    }
+    return { from: fromToken.value, to: toToken.value };
   }
 
   parseValidate(tokens, start) {

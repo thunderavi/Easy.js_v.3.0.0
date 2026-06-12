@@ -2,7 +2,7 @@ class Tokenizer {
   constructor() {
     this.keywords = new Set([
       'START', 'SERVER', 'USE', 'MODEL', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH',
-      'FROM', 'AUTH', 'BY', 'PROTECT', 'VALIDATE', 'MIDDLEWARE', 'MONGODB', 'MYSQL'
+      'FROM', 'AUTH', 'BY', 'PROTECT', 'VALIDATE', 'MIDDLEWARE', 'MONGODB', 'MYSQL', 'ALIAS', 'AS'
     ]);
   }
 

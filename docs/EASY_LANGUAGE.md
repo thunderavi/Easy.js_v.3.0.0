@@ -85,3 +85,25 @@ IMPORT ./auth.easy
 IMPORT ./routes.easy
 IMPORT ./jobs.easy
 ```
+
+## ALIAS
+
+Create an additional route that maps to the same handler as an existing route.
+Useful for API versioning or renaming routes without breaking existing clients.
+
+### Syntax
+
+```
+ALIAS <original-path> AS <alias-path>
+```
+
+### Example
+
+```
+GET /blogPosts FROM blogPosts
+ALIAS /blogPosts AS /api/v1/articles
+ALIAS /blogPosts/:id AS /api/v1/articles/:id
+```
+
+Both `/blogPosts` and `/api/v1/articles` serve the same handler.
+The original route remains fully functional.
