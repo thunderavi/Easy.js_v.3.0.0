@@ -44,3 +44,8 @@ VALIDATE posts {
 
 PROTECT /users
 PROTECT /posts
+
+SEED users WITH [
+  { "name": "Alice Tester", "email": "alice@example.com", "role": "user" },
+  { "name": "Bob Developer", "email": "bob@example.com", "role": "admin" }
+]
