@@ -202,7 +202,7 @@ parseSeedsFromContent(content) {
 
     // Robust balanced bracket counter (fixes feedback 3)
 
-    let bracketCount = 0;
+    let bracketCount = 1;
     let endIndex = -1;
 
     for (let i = startIndex; i < content.length; i++) {
@@ -217,7 +217,7 @@ parseSeedsFromContent(content) {
     if (endIndex === -1) {
       throw new Error('Unmatched [ in SEED block');
     }
-    const rawBlock = content.slice(startIndex, endIndex + 1);
+    const rawBlock = content.slice(startIndex, endIndex + 1).trim();
     const records = this.parseRecordArray(rawBlock);
     this.ast.seeds.push({ model, records });
   }
