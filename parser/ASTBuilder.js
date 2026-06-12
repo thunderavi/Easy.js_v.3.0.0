@@ -194,13 +194,34 @@ class ASTBuilder {
   }
 
 parseSeedsFromContent(content) {
-  const seedRegex = /\bSEED\s+(\w+)\s+WITH\s*(\[[\s\S]*?\])/gi;
+  const seedStartRegex = /\bSEED\s+(\w+)\s+WITH\s*(\[)/gi;
   let match;
-  while ((match = seedRegex.exec(content)) !== null) {
+  while ((match = seedStartRegex.exec(content)) !== null) {
     const model = match[1];
-    const records = this.parseRecordArray(match[2]);
+    const startIndex = seedStartRegex.lastIndex;
+
+    // Robust balanced bracket counter (fixes feedback 3)
+
+    let bracketCount = 0;
+    let endIndex = -1;
+
+    for (let i = startIndex; i < content.length; i++) {
+      if (content[i] === '[') bracketCount++;
+      if (content[i] === ']') bracketCount--;
+      if (bracketCount === 0) {
+        endIndex = i;
+        break;
+      }
+    }
+
+    if (endIndex === -1) {
+      throw new Error('Unmatched [ in SEED block');
+    }
+    const rawBlock = content.slice(startIndex, endIndex + 1);
+    const records = this.parseRecordArray(rawBlock);
     this.ast.seeds.push({ model, records });
   }
+
 }
 
 parseRecordArray(raw) {

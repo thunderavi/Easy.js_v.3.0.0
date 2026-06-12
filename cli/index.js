@@ -625,32 +625,41 @@ class CLI {
   }
 
   runSeedCommand() {
+ // 1. Compile seeds from DSL first (fixes feedback 1)
+    try {
+      const file = this.defaultEasyFile();
+      if (fs.existsSync(path.resolve(process.cwd(), file))) {
+        const source = this.readEasySource(file);
+        const ast = new Parser().parse(source);
+        const config = new Compiler().compile(ast);
+        if (config.seeds && config.seeds.length > 0) {
+          const MigrationManager = require('../core/migrationManager');
+          const migrationManager = new MigrationManager(config);
+          migrationManager.generateSeedsFromConfig(config.seeds);
+        }
+      }
+    } catch (err) {
+      Logger.warn(`Failed to generate seeds from DSL: ${err.message}`);
+    }
     const arg0 = this.args[0];
-
     // If no argument or 'run', run all seeds
     if (!arg0 || arg0 === 'run') {
       this.runShell('npm run seed:run');
       return;
     }
-
     // If 'make', create seed
     if (arg0 === 'make') {
       const name = this.args[1] || 'seed';
       this.runShell(`npm run seed:create -- ${name}`);
       return;
     }
-
-    // Otherwise, check for a matching seed file to run specifically
+    // Otherwise, check for a matching seed file using a strict regex (fixes feedback 4)
     try {
       const seedsDir = path.join(process.cwd(), 'seeds');
       if (fs.existsSync(seedsDir)) {
         const files = fs.readdirSync(seedsDir);
-        const match = files.find(file =>
-          file.toLowerCase() === `${arg0.toLowerCase()}.js` ||
-          file.toLowerCase() === `seed_${arg0.toLowerCase()}.js` ||
-          file.toLowerCase().includes(arg0.toLowerCase())
-        );
-
+        const targetPattern = new RegExp(`^(?:\\d*_)?(?:seed_)?${arg0.toLowerCase()}\\.js$`, 'i');
+        const match = files.find(file => targetPattern.test(file));
         if (match) {
           Logger.info(`Running specific seed file: ${match}`);
           this.runShell(`npx knex seed:run --specific=${match}`);
@@ -660,7 +669,6 @@ class CLI {
     } catch (err) {
       Logger.warn(`Failed to read seeds directory: ${err.message}`);
     }
-
     // Fallback if no specific match is found
     this.runShell('npm run seed:run');
   }
