@@ -58,14 +58,28 @@ class EnterpriseAuth {
   }
 
   /**
-   * Generate authorization URL for OAuth2
+   * Generate authorization URL for OAuth2 (PKCE flow per RFC 7636).
+   *
+   * BREAKING: codeChallenge is now a 43-char base64url S256 challenge
+   * (previously a 64-char random hex string). codeVerifier is now returned.
+   *
+   * Uses the URL constructor to safely handle existing query strings,
+   * fragments, and proper percent-encoding (%20 for spaces).
    */
   async getOAuth2AuthUrl(provider) {
     const providerConfig = this.oauth2Providers.get(provider);
     if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
     const state = crypto.randomBytes(32).toString('hex');
-    const codeChallenge = this.generateCodeChallenge();
+    const { codeVerifier, codeChallenge } = this.generatePKCEPair();
+
+    const url = new URL(providerConfig.authorizationUrl);
+    url.searchParams.set('client_id', providerConfig.clientId);
+    url.searchParams.set('redirect_uri', providerConfig.redirectUri);
+    url.searchParams.set('scope', providerConfig.scopes.join(' '));
+    url.searchParams.set('state', state);
+    url.searchParams.set('code_challenge', codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
 
     // The expiry time for the state to prevent it from sitting around forever (e.g., 10 minutes)
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -82,17 +96,26 @@ class EnterpriseAuth {
     await this.store.saveOAuthState(state, stateData, expiresAt);
 
     return {
-      url: `${providerConfig.authorizationUrl}?client_id=${providerConfig.clientId}&redirect_uri=${providerConfig.redirectUri}&scope=${providerConfig.scopes.join(' ')}&state=${state}&code_challenge=${codeChallenge}`,
+      url: url.toString(),
       state,
       codeChallenge,
+      codeVerifier
     };
   }
 
   /**
-   * Generate PKCE code challenge
+   * Generate PKCE code_verifier + code_challenge pair per RFC 7636.
+   * code_verifier: 43 characters — 32 random bytes encoded as base64url (no padding).
+   * code_challenge: BASE64URL(SHA256(code_verifier)).
+   * Returns { codeVerifier, codeChallenge }.
    */
-  generateCodeChallenge() {
-    return crypto.randomBytes(32).toString('hex');
+  generatePKCEPair() {
+    const verifier = crypto.randomBytes(32)
+      .toString('base64url');
+    const challenge = crypto.createHash('sha256')
+      .update(verifier)
+      .digest('base64url');
+    return { codeVerifier: verifier, codeChallenge: challenge };
   }
 
   /**
@@ -125,9 +148,15 @@ class EnterpriseAuth {
     // Note: Because your generateCodeChallenge() currently generates plain random bytes,
     // we use a plain equality check. If you switch to S256 hashing in the future,
     // you would hash the verifier here before comparing.
-    if (storedState.codeChallenge !== codeVerifier) {
-      throw new Error('PKCE verification failed');
-    }
+    // 5. Validate PKCE code verifier against stored challenge
+const expectedChallenge = crypto
+  .createHash('sha256')
+  .update(codeVerifier)
+  .digest('base64url');
+
+if (storedState.codeChallenge !== expectedChallenge) {
+  throw new Error('PKCE verification failed');
+}
 
     // 6. Consume the state immediately to prevent replay attacks
     await this.store.deleteOAuthState(state);

@@ -35,11 +35,16 @@ describe('EnterpriseAuth', () => {
     });
 
     const authUrl = await auth.getOAuth2AuthUrl('github');
+    const parsedUrl = new URL(authUrl.url);
 
-    expect(authUrl.url).toContain('client_id=client');
-    expect(authUrl.url).toContain('scope=openid email');
+    expect(parsedUrl.searchParams.get('client_id')).toBe('client');
+    expect(parsedUrl.searchParams.get('scope')).toBe('openid email');
     expect(authUrl.state).toHaveLength(64);
-    expect(authUrl.codeChallenge).toHaveLength(64);
+
+    // Updated assertions from main branch for PKCE
+    expect(authUrl.codeChallenge).toHaveLength(43);
+    expect(authUrl.codeVerifier).toBeDefined();
+    expect(parsedUrl.searchParams.get('code_challenge_method')).toBe('S256');
 
     await expect(auth.getOAuth2AuthUrl('missing')).rejects.toThrow('not configured');
   });
@@ -202,7 +207,8 @@ describe('EnterpriseAuth', () => {
       // Generate valid state
       const authUrl = await auth.getOAuth2AuthUrl('google');
       const validState = authUrl.state;
-      const validVerifier = authUrl.codeChallenge; // Since challenge isn't hashed in the current setup, verifier == challenge
+      // Extracting verifier from the new object returned by the merged code
+      const validVerifier = authUrl.codeVerifier;
 
       // 1. Valid State Verification & Replay Prevention
       const successResponse = await auth.exchangeOAuth2Code(
@@ -231,7 +237,12 @@ describe('EnterpriseAuth', () => {
       ).rejects.toThrow('Invalid, missing, or expired OAuth state');
 
       // 3. Provider Mismatch Verification
-      auth.registerOAuth2Provider('github', { redirectUri: '...', scopes: [] });
+      auth.registerOAuth2Provider('github', {
+        clientId: 'github-client',
+        authorizationUrl: 'https://github.example/authorize',
+        redirectUri: '...',
+        scopes: [],
+      });
       const githubUrl = await auth.getOAuth2AuthUrl('github');
 
       // Try to use a valid github state on the google provider
@@ -239,7 +250,7 @@ describe('EnterpriseAuth', () => {
         auth.exchangeOAuth2Code(
           'google',
           'mock-code',
-          githubUrl.codeChallenge,
+          githubUrl.codeVerifier,
           githubUrl.state,
           '...'
         )
@@ -251,7 +262,7 @@ describe('EnterpriseAuth', () => {
         auth.exchangeOAuth2Code(
           'google',
           'mock-code',
-          uriAuthUrl.codeChallenge,
+          uriAuthUrl.codeVerifier,
           uriAuthUrl.state,
           'https://wrong-uri.example/'
         )
