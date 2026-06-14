@@ -99,7 +99,7 @@ class EnterpriseAuth {
       url: url.toString(),
       state,
       codeChallenge,
-      codeVerifier
+      codeVerifier,
     };
   }
 
@@ -122,43 +122,32 @@ class EnterpriseAuth {
    * Exchange OAuth2 code for token
    */
   async exchangeOAuth2Code(provider, code, codeVerifier, state, redirectUri) {
-    // Added redirectUri
     const providerConfig = this.oauth2Providers.get(provider);
     if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
-    // 1. Fetch the state from the store
     const storedState = await this.store.getOAuthState(state);
 
-    // 2. Validate existence and expiry
     if (!storedState) {
       throw new Error('Invalid, missing, or expired OAuth state');
     }
 
-    // 3. Validate provider mismatch
     if (storedState.provider !== provider) {
       throw new Error('OAuth state provider mismatch');
     }
 
-    // 4. Validate Redirect URI
     if (redirectUri && storedState.redirectUri !== redirectUri) {
       throw new Error('Redirect URI mismatch');
     }
 
-    // 5. Validate PKCE code verifier against stored challenge
-    // Note: Because your generateCodeChallenge() currently generates plain random bytes,
-    // we use a plain equality check. If you switch to S256 hashing in the future,
-    // you would hash the verifier here before comparing.
-    // 5. Validate PKCE code verifier against stored challenge
-const expectedChallenge = crypto
-  .createHash('sha256')
-  .update(codeVerifier)
-  .digest('base64url');
+    const expectedChallenge = crypto
+      .createHash('sha256')
+      .update(codeVerifier)
+      .digest('base64url');
 
-if (storedState.codeChallenge !== expectedChallenge) {
-  throw new Error('PKCE verification failed');
-}
+    if (storedState.codeChallenge !== expectedChallenge) {
+      throw new Error('PKCE verification failed');
+    }
 
-    // 6. Consume the state immediately to prevent replay attacks
     await this.store.deleteOAuthState(state);
 
     // Mock response for demonstration

@@ -49,6 +49,49 @@ describe('EnterpriseAuth', () => {
     await expect(auth.getOAuth2AuthUrl('missing')).rejects.toThrow('not configured');
   });
 
+  it('generates PKCE verifier/challenge pair compliant with RFC 7636', () => {
+    const auth = new EnterpriseAuth();
+    const pair = auth.generatePKCEPair();
+
+    expect(pair.codeVerifier.length).toBeGreaterThanOrEqual(43);
+    expect(pair.codeVerifier.length).toBeLessThanOrEqual(128);
+    expect(pair.codeVerifier).toMatch(/^[A-Za-z0-9\-._~]+$/);
+
+    expect(pair.codeChallenge).toHaveLength(43);
+    expect(pair.codeChallenge).toMatch(/^[A-Za-z0-9\-._~]+$/);
+
+    const expectedChallenge = require('crypto')
+      .createHash('sha256')
+      .update(pair.codeVerifier)
+      .digest('base64url');
+    expect(pair.codeChallenge).toBe(expectedChallenge);
+  });
+
+  it('includes correct PKCE params in the authorization URL', async () => {
+    const auth = new EnterpriseAuth();
+    auth.registerOAuth2Provider('google', {
+      clientId: 'cid',
+      clientSecret: 'cs',
+      authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+      tokenUrl: 'https://oauth2.googleapis.com/token',
+      userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
+      redirectUri: 'https://app.example/callback',
+      scopes: ['openid', 'email', 'profile'],
+    });
+
+    const authUrl = await auth.getOAuth2AuthUrl('google');
+    const parsedUrl = new URL(authUrl.url);
+
+    expect(parsedUrl.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(parsedUrl.searchParams.get('code_challenge')).toBeTruthy();
+
+    const expectedChallenge = require('crypto')
+      .createHash('sha256')
+      .update(authUrl.codeVerifier)
+      .digest('base64url');
+    expect(authUrl.codeChallenge).toBe(expectedChallenge);
+  });
+
   it('generates MFA secrets, verifies TOTP, and consumes backup codes once', async () => {
     const auth = new EnterpriseAuth();
     const mfa = await auth.generateMFASecret('u1');
