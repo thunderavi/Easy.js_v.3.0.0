@@ -678,6 +678,14 @@ MIT License - Feel free to use in personal and commercial projects
 
 Contributions welcome! Submit issues and pull requests on GitHub.
 
+### 👥 Contributors
+
+Thanks to all contributors ❤️
+
+<a href="https://github.com/thunderavi/Easy.js_v.3.0.0/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=thunderavi/Easy.js_v.3.0.0" />
+</a>
+
 ## Support
 
 For issues and questions:
