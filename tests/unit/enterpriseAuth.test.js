@@ -203,4 +203,150 @@ describe('EnterpriseAuth', () => {
       })
     );
   });
+
+  it('exchanges OAuth2 authorization code successfully', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }),
+    });
+
+    const auth = new EnterpriseAuth({
+      fetch: mockFetch,
+    });
+
+    auth.registerOAuth2Provider('github', {
+      clientId: 'client',
+      clientSecret: 'secret',
+      authorizationUrl: 'https://auth.example/authorize',
+      tokenUrl: 'https://auth.example/token',
+      userInfoUrl: 'https://auth.example/user',
+      redirectUri: 'https://app.example/callback',
+    });
+
+    const authUrl = await auth.getOAuth2AuthUrl('github');
+
+    const result = await auth.exchangeOAuth2Code(
+      'github',
+      'auth-code',
+      authUrl.codeVerifier,
+      authUrl.state,
+      'https://app.example/callback'
+    );
+
+    expect(result.access_token).toBe('access-token');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends correct OAuth2 token exchange payload including PKCE verifier', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: 'token',
+      }),
+    });
+
+    const auth = new EnterpriseAuth({
+      fetch: mockFetch,
+    });
+
+    auth.registerOAuth2Provider('github', {
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      authorizationUrl: 'https://auth.example/authorize',
+      tokenUrl: 'https://auth.example/token',
+      userInfoUrl: 'https://auth.example/user',
+      redirectUri: 'https://app.example/callback',
+    });
+
+    const authUrl = await auth.getOAuth2AuthUrl('github');
+
+    await auth.exchangeOAuth2Code(
+      'github',
+      'oauth-code',
+      authUrl.codeVerifier,
+      authUrl.state,
+      'https://app.example/callback'
+    );
+
+    const [url, options] = mockFetch.mock.calls[0];
+
+    expect(url).toBe('https://auth.example/token');
+    expect(options.method).toBe('POST');
+
+    const body = options.body.toString();
+
+    expect(body).toContain('grant_type=authorization_code');
+    expect(body).toContain('client_id=client-id');
+    expect(body).toContain('client_secret=client-secret');
+    expect(body).toContain('code=oauth-code');
+    expect(body).toContain('code_verifier=');
+  });
+
+  it('handles OAuth provider error responses', async () => {
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: 'invalid_grant',
+      }),
+    });
+
+    const auth = new EnterpriseAuth({
+      fetch: mockFetch,
+    });
+
+    auth.registerOAuth2Provider('github', {
+      clientId: 'client',
+      clientSecret: 'secret',
+      authorizationUrl: 'https://auth.example/authorize',
+      tokenUrl: 'https://auth.example/token',
+      userInfoUrl: 'https://auth.example/user',
+      redirectUri: 'https://app.example/callback',
+    });
+
+    const authUrl = await auth.getOAuth2AuthUrl('github');
+
+    await expect(
+      auth.exchangeOAuth2Code(
+        'github',
+        'bad-code',
+        authUrl.codeVerifier,
+        authUrl.state,
+        'https://app.example/callback'
+      )
+    ).rejects.toThrow('invalid_grant');
+  });
+
+  it('handles OAuth token exchange network failures', async () => {
+    const mockFetch = jest.fn().mockRejectedValue(new Error('network unavailable'));
+
+    const auth = new EnterpriseAuth({
+      fetch: mockFetch,
+    });
+
+    auth.registerOAuth2Provider('github', {
+      clientId: 'client',
+      clientSecret: 'secret',
+      authorizationUrl: 'https://auth.example/authorize',
+      tokenUrl: 'https://auth.example/token',
+      userInfoUrl: 'https://auth.example/user',
+      redirectUri: 'https://app.example/callback',
+    });
+
+    const authUrl = await auth.getOAuth2AuthUrl('github');
+
+    await expect(
+      auth.exchangeOAuth2Code(
+        'github',
+        'auth-code',
+        authUrl.codeVerifier,
+        authUrl.state,
+        'https://app.example/callback'
+      )
+    ).rejects.toThrow('network unavailable');
+  });
 });

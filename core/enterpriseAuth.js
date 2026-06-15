@@ -39,10 +39,6 @@ class EnterpriseAuth {
     this.store = config.store || createAuthStore(config);
     this.fetchFn = config.fetch || globalThis.fetch;
 
-    if (!this.fetchFn) {
-      throw new Error('Fetch implementation unavailable');
-    }
-
     this.maxLoginAttempts = 5;
     this.lockoutDuration = 15 * 60 * 1000; // 15 minutes
   }
@@ -169,6 +165,11 @@ class EnterpriseAuth {
 
     if (codeVerifier) {
       payload.code_verifier = codeVerifier;
+    }
+
+    // Ensure a fetch implementation exists
+    if (!this.fetchFn) {
+      throw new Error('Fetch implementation unavailable');
     }
 
     try {
