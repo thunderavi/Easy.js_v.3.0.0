@@ -105,8 +105,9 @@ easy.js simplifies backend development by letting you write backend applications
 
 ### Installation
 
-```bash
-npm install easybackend.js
+*Note: You do not need to install the framework globally. You can bootstrap a new project instantly using `npx`.*
+
+Provider SDKs and database drivers are optional so normal installs stay small.
 ```
 
 Provider SDKs and database drivers are optional so normal installs stay small. Install only what your app uses, for example:
