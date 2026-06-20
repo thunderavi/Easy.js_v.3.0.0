@@ -90,4 +90,22 @@ describe('RouterManager', () => {
     );
     expect(methodRes.status).toHaveBeenCalledWith(405);
   });
+
+  it('forwards route errors to next(error) on failure', async () => {
+    const manager = new RouterManager();
+    const db = {
+      query: jest.fn().mockRejectedValue(new Error('Database connection failed'))
+    };
+    const next = jest.fn();
+    const res = createResponse();
+
+    await manager.createRouteHandler({ method: 'GET', model: 'posts' }, db)(
+      { params: {}, query: {}, body: null },
+      res,
+      next
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(next.mock.calls[0][0].message).toBe('Database connection failed');
+  });
 });
