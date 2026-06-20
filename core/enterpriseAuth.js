@@ -28,7 +28,7 @@ class EnterpriseAuth {
       enableOAuth2: config.enableOAuth2 !== false,
       enableSAML: config.enableSAML !== false,
       enableLDAP: config.enableLDAP !== false,
-      ...config
+      ...config,
     };
 
     // Static provider configuration — not runtime auth state, stays in memory.
@@ -37,6 +37,7 @@ class EnterpriseAuth {
     // Pluggable auth store — defaults to MemoryAuthStore for dev/tests.
     // Pass config.store = new DatabaseAuthStore({ knex }) for production.
     this.store = config.store || createAuthStore(config);
+    this.fetchFn = config.fetch || globalThis.fetch;
 
     this.maxLoginAttempts = 5;
     this.lockoutDuration = 15 * 60 * 1000; // 15 minutes
@@ -53,49 +54,147 @@ class EnterpriseAuth {
       tokenUrl: config.tokenUrl,
       userInfoUrl: config.userInfoUrl,
       redirectUri: config.redirectUri,
-      scopes: config.scopes || ['openid', 'profile', 'email']
+      scopes: config.scopes || ['openid', 'profile', 'email'],
     });
   }
 
   /**
-   * Generate authorization URL for OAuth2
+   * Generate authorization URL for OAuth2 (PKCE flow per RFC 7636).
+   *
+   * BREAKING: codeChallenge is now a 43-char base64url S256 challenge
+   * (previously a 64-char random hex string). codeVerifier is now returned.
+   *
+   * Uses the URL constructor to safely handle existing query strings,
+   * fragments, and proper percent-encoding (%20 for spaces).
    */
-  getOAuth2AuthUrl(provider) {
+  async getOAuth2AuthUrl(provider) {
     const providerConfig = this.oauth2Providers.get(provider);
     if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
     const state = crypto.randomBytes(32).toString('hex');
-    const codeChallenge = this.generateCodeChallenge();
+    const { codeVerifier, codeChallenge } = this.generatePKCEPair();
+
+    const url = new URL(providerConfig.authorizationUrl);
+    url.searchParams.set('client_id', providerConfig.clientId);
+    url.searchParams.set('redirect_uri', providerConfig.redirectUri);
+    url.searchParams.set('scope', providerConfig.scopes.join(' '));
+    url.searchParams.set('state', state);
+    url.searchParams.set('code_challenge', codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+
+    // The expiry time for the state to prevent it from sitting around forever (e.g., 10 minutes)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Build the state metadata payload
+    const stateData = {
+      provider,
+      redirectUri: providerConfig.redirectUri,
+      codeChallenge,
+      createdAt: Date.now(),
+    };
+
+    // Save it to the auth store
+    await this.store.saveOAuthState(state, stateData, expiresAt);
 
     return {
-      url: `${providerConfig.authorizationUrl}?client_id=${providerConfig.clientId}&redirect_uri=${providerConfig.redirectUri}&scope=${providerConfig.scopes.join(' ')}&state=${state}&code_challenge=${codeChallenge}`,
+      url: url.toString(),
       state,
-      codeChallenge
+      codeChallenge,
+      codeVerifier,
     };
   }
 
   /**
-   * Generate PKCE code challenge
+   * Generate PKCE code_verifier + code_challenge pair per RFC 7636.
+   * code_verifier: 43 characters — 32 random bytes encoded as base64url (no padding).
+   * code_challenge: BASE64URL(SHA256(code_verifier)).
+   * Returns { codeVerifier, codeChallenge }.
    */
-  generateCodeChallenge() {
-    return crypto.randomBytes(32).toString('hex');
+  generatePKCEPair() {
+    const verifier = crypto.randomBytes(32).toString('base64url');
+    const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+    return { codeVerifier: verifier, codeChallenge: challenge };
   }
 
   /**
    * Exchange OAuth2 code for token
    */
-  async exchangeOAuth2Code(provider, code, codeVerifier) {
+  async exchangeOAuth2Code(provider, code, codeVerifier, state, redirectUri) {
     const providerConfig = this.oauth2Providers.get(provider);
-    if (!providerConfig) throw new Error(`Provider ${provider} not configured`);
 
-    // This would make actual HTTP request to token endpoint
-    // Returning mock response for demonstration
-    return {
-      access_token: 'oauth2_token_' + crypto.randomBytes(32).toString('hex'),
-      token_type: 'Bearer',
-      expires_in: 3600,
-      refresh_token: 'refresh_token_' + crypto.randomBytes(32).toString('hex')
+    if (!providerConfig) {
+      throw new Error(`Provider ${provider} not configured`);
+    }
+
+    // Validate stored OAuth state
+    const storedState = await this.store.getOAuthState(state);
+
+    if (!storedState) {
+      throw new Error('Invalid, missing, or expired OAuth state');
+    }
+
+    if (storedState.provider !== provider) {
+      throw new Error('OAuth state provider mismatch');
+    }
+
+    if (redirectUri && storedState.redirectUri !== redirectUri) {
+      throw new Error('Redirect URI mismatch');
+    }
+
+    // PKCE verification (RFC 7636)
+    const expectedChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+
+    if (storedState.codeChallenge !== expectedChallenge) {
+      throw new Error('PKCE verification failed');
+    }
+
+    // Consume state (prevent replay attacks)
+    await this.store.deleteOAuthState(state);
+
+    // Real OAuth token exchange
+    const payload = {
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri || providerConfig.redirectUri,
+      client_id: providerConfig.clientId,
     };
+
+    if (providerConfig.clientSecret) {
+      payload.client_secret = providerConfig.clientSecret;
+    }
+
+    if (codeVerifier) {
+      payload.code_verifier = codeVerifier;
+    }
+
+    // Ensure a fetch implementation exists
+    if (!this.fetchFn) {
+      throw new Error('Fetch implementation unavailable');
+    }
+
+    try {
+      const response = await this.fetchFn(providerConfig.tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'OAuth token exchange failed');
+      }
+
+      if (data.error) {
+        throw new Error(`OAuth provider error: ${data.error}`);
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error(`OAuth token exchange failed: ${error.message}`);
+    }
   }
 
   /**
@@ -111,14 +210,14 @@ class EnterpriseAuth {
       secret: encodedSecret,
       verified: false,
       backupCodes: this.generateBackupCodes(10),
-      createdAt: Date.now()
+      createdAt: Date.now(),
     };
     await this.store.saveMfaSecret(userId, secretData);
 
     return {
       secret: encodedSecret,
       qrUrl: `otpauth://totp/${userId}?secret=${encodedSecret}`,
-      backupCodes: secretData.backupCodes
+      backupCodes: secretData.backupCodes,
     };
   }
 
@@ -219,7 +318,7 @@ class EnterpriseAuth {
       mfaPending: requireMFA,
       ip: null,
       userAgent: null,
-      device: null
+      device: null,
     };
 
     await this.store.saveSession(sessionId, userId, sessionData, expiresAt);
@@ -234,20 +333,20 @@ class EnterpriseAuth {
       userId,
       sessionId: sessionId || crypto.randomBytes(16).toString('hex'),
       type: 'access',
-      iat: Math.floor(Date.now() / 1000)
+      iat: Math.floor(Date.now() / 1000),
     };
 
     const accessToken = jwt.sign(payload, this.config.jwtSecret, {
-      expiresIn: this.config.accessTokenExpiry
+      expiresIn: this.config.accessTokenExpiry,
     });
 
     const refreshPayload = {
       ...payload,
-      type: 'refresh'
+      type: 'refresh',
     };
 
     const refreshToken = jwt.sign(refreshPayload, this.config.refreshTokenSecret, {
-      expiresIn: this.config.refreshTokenExpiry
+      expiresIn: this.config.refreshTokenExpiry,
     });
 
     return { accessToken, refreshToken };
@@ -260,7 +359,7 @@ class EnterpriseAuth {
     try {
       const secret = type === 'access' ? this.config.jwtSecret : this.config.refreshTokenSecret;
       const decoded = jwt.verify(token, secret);
-      
+
       if (decoded.type !== type) {
         throw new Error('Invalid token type');
       }
@@ -280,11 +379,11 @@ class EnterpriseAuth {
       const newPayload = {
         userId: decoded.userId,
         sessionId: decoded.sessionId,
-        type: 'access'
+        type: 'access',
       };
 
       const newAccessToken = jwt.sign(newPayload, this.config.jwtSecret, {
-        expiresIn: this.config.accessTokenExpiry
+        expiresIn: this.config.accessTokenExpiry,
       });
 
       return newAccessToken;
@@ -298,7 +397,7 @@ class EnterpriseAuth {
    * NOW ASYNC — callers must await.
    */
   async checkLoginAttempts(userId) {
-    const attempts = await this.store.getLoginAttempts(userId) || { count: 0, lockedUntil: null };
+    const attempts = (await this.store.getLoginAttempts(userId)) || { count: 0, lockedUntil: null };
 
     if (attempts.lockedUntil && attempts.lockedUntil > Date.now()) {
       throw new Error('Account temporarily locked due to too many login attempts');
@@ -309,7 +408,7 @@ class EnterpriseAuth {
       await this.store.recordLoginAttempt(userId, {
         count: attempts.count,
         lockedUntil,
-        lastAttemptAt: attempts.lastAttemptAt || Date.now()
+        lastAttemptAt: attempts.lastAttemptAt || Date.now(),
       });
       throw new Error('Account locked. Try again after 15 minutes');
     }
@@ -322,7 +421,7 @@ class EnterpriseAuth {
    * NOW ASYNC — callers must await.
    */
   async recordFailedAttempt(userId) {
-    const attempts = await this.store.getLoginAttempts(userId) || { count: 0, lockedUntil: null };
+    const attempts = (await this.store.getLoginAttempts(userId)) || { count: 0, lockedUntil: null };
     attempts.count++;
     attempts.lastAttemptAt = Date.now();
     await this.store.recordLoginAttempt(userId, attempts);
@@ -377,9 +476,8 @@ class EnterpriseAuth {
     // MemoryAuthStore: check _sessions map directly.
     // DatabaseAuthStore: exposeRawSession would need a separate query — fall
     //   back to 'Session expired' since it's the common production case.
-    const rawExists = typeof this.store._sessions !== 'undefined'
-      ? this.store._sessions.has(sessionId)
-      : false; // DB adapter: treat null as expired (safe default)
+    const rawExists =
+      typeof this.store._sessions !== 'undefined' ? this.store._sessions.has(sessionId) : false; // DB adapter: treat null as expired (safe default)
 
     if (!rawExists) {
       throw new Error('Invalid session');
@@ -405,7 +503,7 @@ class EnterpriseAuth {
       activeSessions: stats.activeSessions,
       mfaEnabledUsers: stats.mfaEnabledUsers,
       lockedAccounts: stats.lockedAccounts,
-      oauth2Providers: this.oauth2Providers.size
+      oauth2Providers: this.oauth2Providers.size,
     };
   }
 }

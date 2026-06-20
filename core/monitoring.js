@@ -206,6 +206,21 @@ class MonitoringSystem {
 
     const recentMetrics = this.performanceData.filter(m => m.timestamp > startTime);
 
+    if (recentMetrics.length === 0) {
+      return {
+        period,
+        dataPoints: 0,
+        avgResponseTime: '0.00ms',
+        p95ResponseTime: 0,
+        p99ResponseTime: 0,
+        minResponseTime: 0,
+        maxResponseTime: 0,
+        errorRate: '0.00%',
+        requestsPerSecond: '0.00',
+        totalRequests: 0
+      };
+    }
+
     return {
       period,
       dataPoints: recentMetrics.length,

@@ -65,7 +65,7 @@ Your API is running with:
 ## Quick Installation
 
 ```bash
-npm install -g easy.js
+npm install -g easybackend.js
 ```
 
 ## Create Your First App
@@ -300,7 +300,7 @@ easy.js is **immediately ready** to:
 
 ```bash
 # 1. Install
-npm install -g easy.js
+npm install -g easybackend.js
 
 # 2. Create project
 easyjs create my-api

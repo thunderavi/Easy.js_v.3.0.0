@@ -24,6 +24,34 @@ describe('CacheEngine hardening', () => {
     expect(stats.memorySizeBytes).toBeGreaterThan(0);
   });
 
+  it('expires memory cache entries based on TTL and cleans up metadata', async () => {
+    const cache = new CacheEngine({ enableCompression: false });
+
+    await cache.set('users', 'u1', { id: 'u1' }, 1);
+
+    const key = cache.generateKey('users', 'u1');
+
+    expect(await cache.get('users', 'u1')).toEqual({ id: 'u1' });
+    expect(cache.memoryCache.has(key)).toBe(true);
+    expect(cache.keyMetadata.has(key)).toBe(true);
+
+    await new Promise(resolve => setTimeout(resolve, 1100));
+
+    await expect(cache.get('users', 'u1')).resolves.toBeNull();
+
+    expect(cache.memoryCache.has(key)).toBe(false);
+    expect(cache.keyMetadata.has(key)).toBe(false);
+    expect(cache.memoryCacheSize).toBe(0);
+  });
+
+  it('returns memory cache entries before TTL expiry', async () => {
+    const cache = new CacheEngine({ enableCompression: false });
+
+    await cache.set('users', 'u1', { id: 'u1' }, 5);
+
+    await expect(cache.get('users', 'u1')).resolves.toEqual({ id: 'u1' });
+  });
+
   it('clears only entries in the requested namespace despite hashed cache keys', async () => {
     const cache = new CacheEngine({ enableCompression: false });
 

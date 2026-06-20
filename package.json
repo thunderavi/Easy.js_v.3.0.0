@@ -1,6 +1,6 @@
 {
   "name": "easybackend.js",
-  "version": "3.3.3",
+  "version": "3.3.4",
   "description": "A developer-friendly backend DSL and framework for Node.js and Express.",
   "main": "index.js",
   "icon": "public/easyjs-logo-mark.svg",

@@ -1,6 +1,27 @@
 const Logger = require('./logger');
 
 class RouterManager {
+
+  sanitizeRecord(record) {
+    if (!record) return record;
+
+    const obj = record.toObject ? record.toObject() : { ...record };
+
+    delete obj.password;
+    delete obj.passwordHash;
+    delete obj.hashedPassword;
+
+    return obj;
+  }
+
+  sanitizeResults(result) {
+    if (Array.isArray(result)) {
+      return result.map(record => this.sanitizeRecord(record));
+    }
+
+    return this.sanitizeRecord(result);
+  }
+  
   registerRoutes(app, routes, db, validator) {
     for (const route of routes) {
       const handler = this.createRouteHandler(route, db, validator);
@@ -12,12 +33,12 @@ class RouterManager {
     }
   }
 
+
   createRouteHandler(route, db, validator) {
     return async (req, res, next) => {
       try {
         const { method, model, path } = route;
 
-        // Validate request if rules exist
         if (validator && req.body) {
           const validationError = validator.validate(model, req.body);
           if (validationError) {
@@ -47,7 +68,7 @@ class RouterManager {
             result = await db.query(model, 'create', req.body);
             return res.status(201).json({
               success: true,
-              data: result
+              data: this.sanitizeResults(result)
             });
 
           case 'put':
@@ -71,7 +92,7 @@ class RouterManager {
 
         res.json({
           success: true,
-          data: result
+          data: this.sanitizeResults(result)
         });
       } catch (error) {
         Logger.error(`Route error: ${error.message}`);

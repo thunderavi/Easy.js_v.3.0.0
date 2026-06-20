@@ -110,11 +110,20 @@ describe('MonitoringSystem', () => {
     expect(monitoring.getTraceInfo('missing')).toBeUndefined();
 
     const empty = new MonitoringSystem();
-    expect(empty.getPerformanceStats()).toEqual(expect.objectContaining({
-      totalRequests: 0,
-      p95ResponseTime: '0ms',
-      p99ResponseTime: '0ms'
-    }));
+    for (const period of ['minute', 'hour', 'day']) {
+      expect(empty.getPerformanceStats(period)).toEqual(expect.objectContaining({
+        period,
+        dataPoints: 0,
+        avgResponseTime: '0.00ms',
+        p95ResponseTime: 0,
+        p99ResponseTime: 0,
+        minResponseTime: 0,
+        maxResponseTime: 0,
+        errorRate: '0.00%',
+        requestsPerSecond: '0.00',
+        totalRequests: 0
+      }));
+    }
     expect(empty.exportMetrics('json')).toEqual(expect.objectContaining({
       metrics: [],
       performanceData: []
