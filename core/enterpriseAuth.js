@@ -261,9 +261,13 @@ class EnterpriseAuth {
    * Generate TOTP token
    */
   generateTOTPToken(secret, time) {
+    const buf = Buffer.alloc(8);
+    buf.writeBigUInt64BE(BigInt(time));
+
     const hmac = crypto.createHmac('sha1', secret);
-    hmac.update(Buffer.from(time.toString(16), 'hex'));
+    hmac.update(buf);
     const digest = hmac.digest('hex');
+    
     const offset = parseInt(digest.substring(digest.length - 1), 16);
     const tokenValue = parseInt(digest.substring(offset * 2, offset * 2 + 8), 16) & 0x7fffffff;
     return (tokenValue % 1000000).toString().padStart(6, '0');

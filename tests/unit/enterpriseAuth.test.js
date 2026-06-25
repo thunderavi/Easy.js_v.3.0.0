@@ -118,6 +118,38 @@ describe('EnterpriseAuth', () => {
     await expect(auth.verifyTOTP('missing', token)).rejects.toThrow('MFA not configured');
   });
 
+    it('generateTOTPToken is RFC 6238-compliant (Appendix B test vectors)', () => {
+    const auth = new EnterpriseAuth();
+
+    // RFC 6238 Appendix B SHA-1 test vectors.
+    // Secret: ASCII "12345678901234567890"
+    // Counter = floor(T / 30)
+    const secret = Buffer.from('12345678901234567890', 'ascii');
+
+    expect(auth.generateTOTPToken(secret, 1)).toBe('287082');
+    expect(auth.generateTOTPToken(secret, 37037036)).toBe('081804');
+    expect(auth.generateTOTPToken(secret, 37037037)).toBe('050471');
+    expect(auth.generateTOTPToken(secret, 41152263)).toBe('005924');
+    expect(auth.generateTOTPToken(secret, 66666666)).toBe('279037');
+  });
+
+  it('generateTOTPToken produces distinct tokens for small counter values', () => {
+    const auth = new EnterpriseAuth();
+    const secret = Buffer.from('12345678901234567890', 'ascii');
+
+   
+    const t1  = auth.generateTOTPToken(secret, 1);
+    const t2  = auth.generateTOTPToken(secret, 2);
+    const t10 = auth.generateTOTPToken(secret, 10);
+
+    expect(t1).toBe('287082');  // RFC Appendix B vector
+    expect(t2).toBe('359152');  // independently verified
+    expect(t1).not.toBe(t2);
+    expect(t1).not.toBe(t10);
+    expect(t2).not.toBe(t10);
+  });
+
+
   it('creates, validates, expires, and logs out sessions', async () => {
     const store = new MemoryAuthStore();
     const auth = new EnterpriseAuth({ sessionTimeout: 10, store });
