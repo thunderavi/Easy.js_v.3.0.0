@@ -96,10 +96,7 @@ class RouterManager {
         });
       } catch (error) {
         Logger.error(`Route error: ${error.message}`);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
+        next(error);
       }
     };
   }
