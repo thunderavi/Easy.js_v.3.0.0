@@ -67,7 +67,7 @@ class MigrationManager {
     try {
       const timestamp = Date.now();
       const filename = `${timestamp}_${name}.js`;
-      const filepath = path.join(process.cwd(), '/migrations', filename); // replaced __dirname with process.cwd() (fixes feedback 2)
+      const filepath = path.join(__dirname, '../migrations', filename);
 
       const template = `
 exports.up = async (knex) => {
@@ -110,7 +110,7 @@ exports.down = async (knex) => {
     try {
       const timestamp = Date.now();
       const filename = `${timestamp}_${name}.js`;
-      const filepath = path.join(process.cwd(), '/seeds', filename); // replaced __dirname with process.cwd() (fixes feedback 2)
+      const filepath = path.join(__dirname, '../seeds', filename);
 
       const template = `
 exports.seed = async (knex) => {
@@ -136,7 +136,7 @@ exports.seed = async (knex) => {
 
   async generateSeedsFromConfig(seeds) {
     try {
-      const seedsDir = path.join(process.cwd(), '/seeds'); // replaced __dirname with process.cwd() (fixes feedback 2)
+      const seedsDir = path.join(process.cwd(), 'seeds');
       if (!fs.existsSync(seedsDir)) {
         fs.mkdirSync(seedsDir, { recursive: true });
       }

@@ -200,8 +200,6 @@ parseSeedsFromContent(content) {
     const model = match[1];
     const startIndex = seedStartRegex.lastIndex;
 
-    // Robust balanced bracket counter (fixes feedback 3)
-
     let bracketCount = 1;
     let endIndex = -1;
 

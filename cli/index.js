@@ -625,7 +625,6 @@ class CLI {
   }
 
   runSeedCommand() {
- // 1. Compile seeds from DSL first (fixes feedback 1)
     try {
       const file = this.defaultEasyFile();
       if (fs.existsSync(path.resolve(process.cwd(), file))) {
@@ -653,7 +652,6 @@ class CLI {
       this.runShell(`npm run seed:create -- ${name}`);
       return;
     }
-    // Otherwise, check for a matching seed file using a strict regex (fixes feedback 4)
     try {
       const seedsDir = path.join(process.cwd(), 'seeds');
       if (fs.existsSync(seedsDir)) {
