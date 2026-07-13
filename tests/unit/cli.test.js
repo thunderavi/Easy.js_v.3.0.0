@@ -142,4 +142,45 @@ describe('CLI defaults', () => {
       fs.rmSync(temp, { recursive: true, force: true });
     }
   });
+
+  it('handles seed command arguments correctly', () => {
+    const cli = new CLI(['node', 'cli/index.js', 'seed']);
+    const shellSpy = jest.spyOn(cli, 'runShell').mockImplementation(() => {});
+
+    // No arguments -> run all
+    cli.runSeedCommand();
+    expect(shellSpy).toHaveBeenLastCalledWith('npm run seed:run');
+
+    // 'run' -> run all
+    cli.args = ['run'];
+    cli.runSeedCommand();
+    expect(shellSpy).toHaveBeenLastCalledWith('npm run seed:run');
+
+    // 'make' 'users' -> make seed
+    cli.args = ['make', 'users'];
+    cli.runSeedCommand();
+    expect(shellSpy).toHaveBeenLastCalledWith('npm run seed:create -- users');
+
+    // specific seed name where file exists
+    const existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const readdirSpy = jest.spyOn(fs, 'readdirSync').mockReturnValue(['seed_users.js', '001_posts.js']);
+    
+    cli.args = ['users'];
+    cli.runSeedCommand();
+    expect(shellSpy).toHaveBeenLastCalledWith('npx knex seed:run --specific=seed_users.js');
+
+    cli.args = ['posts'];
+    cli.runSeedCommand();
+    expect(shellSpy).toHaveBeenLastCalledWith('npx knex seed:run --specific=001_posts.js');
+
+    // fallback if no matching file exists
+    readdirSpy.mockReturnValue([]);
+    cli.args = ['missing'];
+    cli.runSeedCommand();
+    expect(shellSpy).toHaveBeenLastCalledWith('npm run seed:run');
+
+    existsSpy.mockRestore();
+    readdirSpy.mockRestore();
+    shellSpy.mockRestore();
+  });
 });

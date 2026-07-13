@@ -114,4 +114,69 @@ describe('MigrationManager', () => {
 
     await expect(new MigrationManager().close()).resolves.toBeUndefined();
   });
+
+  describe('SEED Data Generation and Parser support', () => {
+    it('parses SEED statements correctly using build(tokens) and buildFromContent', () => {
+      const Parser = require('../../parser/Parser');
+      const parser = new Parser();
+      const dsl = `
+        SEED users WITH [
+          { "name": "Alice", "email": "alice@example.com" },
+          { "name": "Bob", "email": "bob@example.com" }
+        ]
+      `;
+      const ast = parser.parse(dsl);
+      expect(ast.seeds).toHaveLength(1);
+      expect(ast.seeds[0].model).toBe('users');
+      expect(ast.seeds[0].records).toHaveLength(2);
+      expect(ast.seeds[0].records[0]).toEqual({ name: 'Alice', email: 'alice@example.com' });
+    });
+
+    it('generates seed file code and runs seed twice inserting record only once', async () => {
+      const manager = new MigrationManager();
+      
+      const records = [
+        { name: 'Alice', email: 'alice@example.com' },
+        { name: 'Bob', email: 'bob@example.com' }
+      ];
+
+      // Build safe seed code using buildSafeSeedCode
+      const code = manager.buildSafeSeedCode('users', records);
+
+      // Evaluate the generated seed code using a mocked knex instance
+      const seedModule = {};
+      const runContext = { exports: seedModule };
+      const runFunc = new Function('module', 'exports', 'require', code + '\nreturn exports.seed;');
+      const seedFunc = runFunc(runContext, seedModule, require);
+
+      // Mock knex
+      // First call: both do not exist.
+      // Second call: both exist.
+      const mockFirst = jest.fn()
+        .mockResolvedValueOnce(null) // Alice check (run 1) -> does not exist
+        .mockResolvedValueOnce(null) // Bob check (run 1) -> does not exist
+        .mockResolvedValueOnce({ id: 1 }) // Alice check (run 2) -> exists
+        .mockResolvedValueOnce({ id: 2 }); // Bob check (run 2) -> exists
+
+      const mockInsert = jest.fn().mockResolvedValue([1]);
+
+      const knexMock = jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        first: mockFirst,
+        insert: mockInsert
+      });
+
+      // Run 1: Should perform insertions
+      await seedFunc(knexMock);
+      expect(mockInsert).toHaveBeenCalledTimes(2);
+      expect(mockInsert).toHaveBeenNthCalledWith(1, records[0]);
+      expect(mockInsert).toHaveBeenNthCalledWith(2, records[1]);
+
+      mockInsert.mockClear();
+
+      // Run 2: Should skip insertions
+      await seedFunc(knexMock);
+      expect(mockInsert).not.toHaveBeenCalled();
+    });
+  });
 });

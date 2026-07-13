@@ -13,7 +13,8 @@ class Compiler {
       docs: false,
       admin: false,
       roles: [],
-      jobs: []
+      jobs: [],
+      seeds: []
     };
   }
 
@@ -31,6 +32,7 @@ class Compiler {
     this.config.admin = ast.admin;
     this.config.roles = ast.roles || [];
     this.config.jobs = ast.jobs || [];
+    this.config.seeds = ast.seeds || [];
 
     return this.config;
   }
@@ -69,7 +71,7 @@ class Compiler {
   compileRoutes(routes, models) {
     return routes.map(route => {
       const model = models.find(m => m.name === route.model);
-      
+
       return {
         method: route.method.toLowerCase(),
         path: route.path,

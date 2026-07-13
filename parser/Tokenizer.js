@@ -2,7 +2,8 @@ class Tokenizer {
   constructor() {
     this.keywords = new Set([
       'START', 'SERVER', 'USE', 'MODEL', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH',
-      'FROM', 'AUTH', 'BY', 'PROTECT', 'VALIDATE', 'MIDDLEWARE', 'MONGODB', 'MYSQL'
+      'FROM', 'AUTH', 'BY', 'PROTECT', 'VALIDATE', 'MIDDLEWARE', 'MONGODB', 'MYSQL',
+      'SEED', 'WITH'
     ]);
   }
 
@@ -21,14 +22,16 @@ class Tokenizer {
 
   tokenizeLine(line) {
     const tokens = [];
-    const regex = /\{([^}]*)\}|"([^"]*)"|'([^']*)'|(\S+)/g;
+    const regex = /\{([^}]*)\}|\[([^\]]*)\]|"([^"]*)"|'([^']*)'|(\S+)/g;
     let match;
 
     while ((match = regex.exec(line)) !== null) {
-      const [, blockContent, dqString, sqString, word] = match;
+      const [, blockContent, arrayContent, dqString, sqString, word] = match;
 
       if (blockContent !== undefined) {
         tokens.push({ type: 'BLOCK', value: blockContent.trim() });
+      } else if (arrayContent !== undefined) {
+        tokens.push({ type: 'BLOCK', value: '[' + arrayContent.trim() + ']' });
       } else if (dqString !== undefined || sqString !== undefined) {
         tokens.push({ type: 'STRING', value: dqString || sqString });
       } else if (word) {

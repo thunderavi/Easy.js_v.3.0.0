@@ -625,13 +625,50 @@ class CLI {
   }
 
   runSeedCommand() {
-    const subcommand = this.args[0] || 'run';
-    const name = this.args[1] || 'seed';
-    const commands = {
-      run: 'npm run seed:run',
-      make: `npm run seed:create -- ${name}`
-    };
-    this.runShell(commands[subcommand] || commands.run);
+    try {
+      const file = this.defaultEasyFile();
+      if (fs.existsSync(path.resolve(process.cwd(), file))) {
+        const source = this.readEasySource(file);
+        const ast = new Parser().parse(source);
+        const config = new Compiler().compile(ast);
+        if (config.seeds && config.seeds.length > 0) {
+          const MigrationManager = require('../core/migrationManager');
+          const migrationManager = new MigrationManager(config);
+          migrationManager.generateSeedsFromConfig(config.seeds);
+        }
+      }
+    } catch (err) {
+      Logger.warn(`Failed to generate seeds from DSL: ${err.message}`);
+    }
+    const arg0 = this.args[0];
+    // If no argument or 'run', run all seeds
+    if (!arg0 || arg0 === 'run') {
+      this.runShell('npm run seed:run');
+      return;
+    }
+    // If 'make', create seed
+    if (arg0 === 'make') {
+      const name = this.args[1] || 'seed';
+      this.runShell(`npm run seed:create -- ${name}`);
+      return;
+    }
+    try {
+      const seedsDir = path.join(process.cwd(), 'seeds');
+      if (fs.existsSync(seedsDir)) {
+        const files = fs.readdirSync(seedsDir);
+        const targetPattern = new RegExp(`^(?:\\d*_)?(?:seed_)?${arg0.toLowerCase()}\\.js$`, 'i');
+        const match = files.find(file => targetPattern.test(file));
+        if (match) {
+          Logger.info(`Running specific seed file: ${match}`);
+          this.runShell(`npx knex seed:run --specific=${match}`);
+          return;
+        }
+      }
+    } catch (err) {
+      Logger.warn(`Failed to read seeds directory: ${err.message}`);
+    }
+    // Fallback if no specific match is found
+    this.runShell('npm run seed:run');
   }
 
   showVersion() {

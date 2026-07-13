@@ -27,3 +27,4 @@ tsconfig.tsbuildinfo
 .npm-cache/
 logs/
 *.log
+seeds/

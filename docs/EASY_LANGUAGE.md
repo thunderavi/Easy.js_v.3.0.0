@@ -85,3 +85,16 @@ IMPORT ./auth.easy
 IMPORT ./routes.easy
 IMPORT ./jobs.easy
 ```
+
+## Seed Data
+
+```easy
+SEED users WITH [
+  { "name": "Admin User", "email": "admin@example.com", "password": "securepassword", "role": "admin" }
+]
+```
+
+Seed declarations populate the database with starter data. During compilation, `easy.js` generates deterministic seed files under the `seeds/` folder (e.g., `seed_users.js`).
+
+Unlike standard seed files that wipe existing data, these generated files perform an existence check (matching on `email` for users, `id` if present, or all fields) to ensure that running them multiple times (via `easyjs seed run`) does not create duplicates or overwrite existing data.
+
