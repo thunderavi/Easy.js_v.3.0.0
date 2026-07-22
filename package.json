@@ -3,6 +3,7 @@
   "version": "3.3.4",
   "description": "A developer-friendly backend DSL and framework for Node.js and Express.",
   "main": "index.js",
+  "types": "types/index.d.ts",
   "icon": "public/easyjs-logo-mark.svg",
   "repository": {
     "type": "git",
@@ -43,6 +44,7 @@
     "runtime/",
     "seeds/",
     "storage/",
+    "types/",
     "index.js",
     "app.js",
     "Dockerfile",
