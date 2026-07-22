@@ -12,7 +12,7 @@ import EasyJS, {
   PaymentProcessor,
   ServiceRegistry,
   Language,
-} from '../index';
+} from './index';
 
 // Test EasyJS class instantiation and methods
 const easyjs = new EasyJS();
